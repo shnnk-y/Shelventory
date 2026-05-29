@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ShelVentory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f3f4f6; overscroll-behavior-y: none; touch-action: manipulation; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .slide-in-right { animation: slideInRight 0.3s ease-out; }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        .modal-bg { backdrop-filter: blur(4px); animation: fadeIn 0.2s ease-out; }
+        .modal-content { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: translateY(0); } }
+        .btn-press { transition: transform 0.05s, filter 0.05s; }
+        .btn-press:active { transform: scale(0.96); filter: brightness(0.9); }
+        .btn-press-sm { transition: transform 0.05s, opacity 0.05s; }
+        .btn-press-sm:active { transform: scale(0.92); opacity: 0.7; }
+        .badge-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.7); } 70% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); } }
+        /* トグルスイッチ用CSS */
+        .toggle-checkbox:checked { right: 0; border-color: #10B981; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #10B981; }
+        .toggle-checkbox { right: 0; z-index: 1; border-color: #E5E7EB; transition: all 0.2s ease; }
+        .toggle-label { width: 2.5rem; height: 1.25rem; background-color: #E5E7EB; border-radius: 9999px; transition: all 0.2s ease; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 4px; }
+        * { -webkit-overflow-scrolling: touch; }
+        html, body { height: 100vh; height: 100dvh; width: 100vw; width: 100dvw; }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden text-gray-800">
+    <div id="app" class="relative mx-auto flex h-full w-full max-w-md flex-col bg-gray-50 shadow-2xl overflow-hidden">
+        <!-- 画面がここに描画されます -->
+    </div>
+
+    <script>
+    // ═══════════════════════════════════════════
+    //  1. データモデル & 定数
+    // ═══════════════════════════════════════════
+    const shelters = [
+        { id: 's1', name: '城南市民センター', evacuees: 300 },
+        { id: 's2', name: '城南小学校', evacuees: 450 },
+        { id: 's3', name: '城南中学校', evacuees: 500 },
+        { id: 's4', name: '鳥飼小学校', evacuees: 350 },
+        { id: 's5', name: '別府小学校', evacuees: 400 },
+        { id: 's6', name: '七隈小学校', evacuees: 380 }
+    ];
+
+    const baseCategories = [
+        { id: 'food', name: '食料', emoji: '🍙', items: [
+            { id: 'alpha-rice', name: 'アルファ米', unit: '食', emoji: '🍚', target: 'all', perDay: 2 },
+            { id: 'bread', name: '保存パン', unit: '食', emoji: '🍞', target: 'all', perDay: 1 },
+            { id: 'biscuit', name: 'ビスケット', unit: '箱', emoji: '🍪', target: 'all', perDay: 0.5 },
+            { id: 'baby-food', name: '離乳食', unit: '食', emoji: '🥣', target: 'infant', perDay: 3 }
+        ]},
+        { id: 'water', name: '飲料', emoji: '💧', items: [
+            { id: 'water', name: '飲料水', unit: 'L', emoji: '💧', target: 'all', perDay: 3 },
+            { id: 'formula', name: '粉ミルク', unit: '回', emoji: '🍼', target: 'infant', perDay: 5 },
+            { id: 'liquid-milk', name: '液体ミルク', unit: '本', emoji: '🥛', target: 'infant', perDay: 5 }
+        ]},
+        { id: 'daily', name: '日用品', emoji: '🧻', items: [
+            { id: 'toilet', name: '簡易トイレ', unit: '回', emoji: '🚽', target: 'all', perDay: 5 },
+            { id: 'paper', name: 'トイレットペーパー', unit: 'ロール', emoji: '🧻', target: 'all', perDay: 0.2 },
+            { id: 'blanket', name: '毛布', unit: '枚', emoji: '🛌', target: 'all', perDay: 1 }
+        ]},
+        { id: 'medical', name: '医療・衛生', emoji: '🚑', items: [
+            { id: 'mask', name: 'マスク', unit: '枚', emoji: '😷', target: 'all', perDay: 1 },
+            { id: 'diaper', name: 'おむつ', unit: '枚', emoji: '👶', target: 'infant', perDay: 6 },
+            { id: 'sanitary', name: '生理用品', unit: '個', emoji: '🌸', target: 'adult', perDay: 5 }
+        ]},
+        { id: 'other', name: 'その他', emoji: '📦', items: [] }
+    ];
+
+    const calorieTable = { infant: 1000, child: 1800, adult: 2200, elderly: 1600 };
+    const waterTable = { infant: 1.5, child: 2.0, adult: 3.0, elderly: 2.5 };
+
+    const memberTypes = [
+        { id: 'infant', name: '乳幼児', emoji: '👶', age: '0〜2歳' },
+        { id: 'child', name: '子供', emoji: '🧒', age: '3〜12歳' },
+        { id: 'adult', name: '大人', emoji: '🧑', age: '13〜64歳' },
+        { id: 'elderly', name: '高齢者', emoji: '👴', age: '65歳以上' }
+    ];
+
+    // タイプごとのニーズチェックリスト
+    const needsByType = {
+        infant: [
+            { id: 'formula', name: '粉ミルク', emoji: '🍼', itemId: 'formula' },
+            { id: 'liquidMilk', name: '液体ミルク', emoji: '🥛', itemId: 'liquid-milk' },
+            { id: 'diaper', name: 'おむつ', emoji: '👶', itemId: 'diaper', options: ['S', 'M', 'L'] },
+            { id: 'babyFood', name: '離乳食', emoji: '🥣', itemId: 'baby-food' },
+            { id: 'babyWipes', name: 'おしりふき', emoji: '🧻', itemId: 'baby-wipes' } // カスタム物資として扱われる
+        ],
+        child: [
+            { id: 'allergyFood', name: 'アレルギー対応食', emoji: '🍱', itemId: 'allergy-food' },
+            { id: 'schoolSupplies', name: '学用品', emoji: '🎒', itemId: 'school-supplies' }
+        ],
+        adult: [
+            { id: 'sanitary', name: '生理用品', emoji: '🌸', itemId: 'sanitary' },
+            { id: 'medicine', name: '常備薬', emoji: '💊', itemId: 'medicine' }
+        ],
+        elderly: [
+            { id: 'medicine', name: '常備薬', emoji: '💊', itemId: 'medicine' },
+            { id: 'careSupplies', name: '介護用品', emoji: '🦯', itemId: 'care-supplies' },
+            { id: 'adultDiaper', name: '大人用おむつ', emoji: '🩲', itemId: 'adult-diaper', options: ['S', 'M', 'L'] },
+            { id: 'softFood', name: 'とろみ・やわらか食', emoji: '🍲', itemId: 'soft-food' }
+        ]
+    };
+
+    function uid() { return Math.random().toString(36).slice(2, 9); }
+
+    // ═══════════════════════════════════════════
+    //  2. 状態管理
+    // ═══════════════════════════════════════════
+    let state = {
+        currentScreen: 'roleSelect', // roleSelect, shelterSelect, groupRegister, userMain, adminDashboard, adminShelterDetail, adminRequests, adminCalendar
+        currentRole: null, // 'user' or 'admin'
+        selectedShelter: null,
+        currentCategory: 'food',
+        userTab: 'supplies', // supplies, requests, mypage
+        modal: null,
+        modalData: {},
+        toast: null,
+        expandedItem: null,
+        expandedMember: null, // 開いているメンバーカードのID
+        calendarMonth: null, // Date object
+        calendarSelectedDate: null // 'YYYY-MM-DD'
+    };
+
+    let currentUserGroup = null; 
+    let shelterGroups = {}; // { shelterId: [ currentUserGroup, ... ] }
+    let supplyLots = {}; // { shelterId: { itemId: [ { id, servingsPerUnit, quantity, expirationDate, image, addedAt } ] } }
+    let requests = []; // [ { id, shelterId, itemId, itemName, quantity, deadlineDays, deadlineDate, status, createdAt, groupId, forMemberId, forMemberName } ]
+    let customItems = []; // [ { id, name, emoji, unit, categoryId, target, perDay } ]
+
+    // ═══════════════════════════════════════════
+    //  3. 永続化 (localStorage) & マイグレーション
+    // ═══════════════════════════════════════════
+    function saveData() {
+        localStorage.setItem('evac_groups', JSON.stringify(shelterGroups));
+        localStorage.setItem('evac_lots', JSON.stringify(supplyLots));
+        localStorage.setItem('evac_requests', JSON.stringify(requests));
+        localStorage.setItem('evac_custom', JSON.stringify(customItems));
+    }
+
+    function loadData() {
+        try {
+            const sg = localStorage.getItem('evac_groups');
+            if (sg) shelterGroups = JSON.parse(sg);
+            const sl = localStorage.getItem('evac_lots');
+            if (sl) supplyLots = JSON.parse(sl);
+            const req = localStorage.getItem('evac_requests');
+            if (req) requests = JSON.parse(req);
+            const ci = localStorage.getItem('evac_custom');
+            if (ci) customItems = JSON.parse(ci);
+
+            // マイグレーション
+            Object.keys(shelterGroups).forEach(sid => {
+                shelterGroups[sid] = shelterGroups[sid].map(g => {
+                    if (g.members) return g; // 既に移行済み
+                    const members = [];
+                    let mId = 1;
+                    const addM = (count, type, prefix) => {
+                        for(let i=0; i<count; i++) {
+                            const needs = {};
+                            if (type === 'infant' && g.infantNeeds) {
+                                if (g.infantNeeds.formula) needs.formula = true;
+                                if (g.infantNeeds.liquidMilk) needs.liquidMilk = true;
+                                if (g.infantNeeds.diaper) { needs.diaper = true; needs.diaperOption = g.infantNeeds.diaperSize || 'M'; }
+                                if (g.infantNeeds.babyFood) needs.babyFood = true;
+                                if (g.infantNeeds.babyWipes) needs.babyWipes = true;
+                            }
+                            members.push({
+                                id: 'm_' + uid() + (mId++),
+                                type: type,
+                                name: prefix + (i+1),
+                                needs: needs,
+                                requestItems: {}, // needId -> requestId
+                                specialNotes: (i===0 && g.specialNotes) ? g.specialNotes : ''
+                            });
+                        }
+                    };
+                    addM(g.infants || 0, 'infant', '乳幼児');
+                    addM(g.children || 0, 'child', '子供');
+                    addM(g.adults || 0, 'adult', '大人');
+                    addM(g.elderly || 0, 'elderly', '高齢者');
+                    return { id: g.id, registeredAt: g.registeredAt || new Date().toISOString(), members };
+                });
+            });
+            saveData(); 
+        } catch(e) { console.error('Data load error:', e); }
+    }
+
+    // ═══════════════════════════════════════════
+    //  4. ヘルパー関数
+    // ═══════════════════════════════════════════
+    function getAllCategories() {
+        return baseCategories.map(cat => ({
+            ...cat,
+            items: [...cat.items, ...customItems.filter(c => c.categoryId === cat.id)]
+        }));
+    }
+
+    function getItemById(id) {
+        for (const cat of getAllCategories()) {
+            const item = cat.items.find(i => i.id === id);
+            if (item) return item;
+        }
+        return { id, name: '不明な物資', unit: '個', emoji: '📦', perDay: 0 };
+    }
+
+    function getShelterPopulation(shelterId) {
+        const groups = shelterGroups[shelterId] || [];
+        let res = { total: 0, infants: 0, children: 0, adults: 0, elderly: 0, groupCount: groups.length };
+        groups.forEach(g => {
+            (g.members || []).forEach(m => {
+                if (m.disabled) return;
+                res.total++;
+                if (m.type === 'infant') res.infants++;
+                else if (m.type === 'child') res.children++;
+                else if (m.type === 'adult') res.adults++;
+                else if (m.type === 'elderly') res.elderly++;
+            });
+        });
+        return res;
+    }
+
+    function calcRemainingDays(shelterId, itemId) {
+        const item = getItemById(itemId);
+        const pop = getShelterPopulation(shelterId);
+        let targetPop = 0;
+        if (item.target === 'all') targetPop = pop.total || shelters.find(s=>s.id===shelterId).evacuees;
+        else if (item.target === 'infant') targetPop = pop.infants;
+        else if (item.target === 'child') targetPop = pop.children;
+        else if (item.target === 'adult') targetPop = pop.adults;
+        else if (item.target === 'elderly') targetPop = pop.elderly;
+
+        if (targetPop === 0) return 999;
+        const perDay = item.perDay || 1;
+        const totalServings = getValidServings(shelterId, itemId);
+        return totalServings / (targetPop * perDay);
+    }
+
+    function calcGroupCalories(group) {
+        if (!group || !group.members) return 0;
+        return group.members.filter(m=>!m.disabled).reduce((sum, m) => sum + (calorieTable[m.type] || 0), 0);
+    }
+
+    function calcGroupWater(group) {
+        if (!group || !group.members) return 0;
+        return group.members.filter(m=>!m.disabled).reduce((sum, m) => sum + (waterTable[m.type] || 0), 0);
+    }
+
+    function getTotalServings(shelterId, itemId) {
+        const lots = (supplyLots[shelterId] && supplyLots[shelterId][itemId]) || [];
+        return lots.reduce((sum, l) => sum + (l.servingsPerUnit * l.quantity), 0);
+    }
+
+    function getValidServings(shelterId, itemId) {
+        const lots = (supplyLots[shelterId] && supplyLots[shelterId][itemId]) || [];
+        const today = new Date().toISOString().split('T')[0];
+        return lots.filter(l => !l.expirationDate || l.expirationDate >= today).reduce((sum, l) => sum + (l.servingsPerUnit * l.quantity), 0);
+    }
+
+    function getNearbySurplus(myShelterId, itemId) {
+        const results = [];
+        shelters.forEach(s => {
+            if (s.id === myShelterId) return;
+            const days = calcRemainingDays(s.id, itemId);
+            if (days >= 7 && days !== 999) {
+                const item = getItemById(itemId);
+                const pop = getShelterPopulation(s.id);
+                let tPop = pop.total || s.evacuees;
+                if (item.target !== 'all') tPop = pop[item.target+'s'] || 0;
+                const excessDays = days - 5;
+                if (excessDays > 0 && tPop > 0) {
+                    const surplusAmount = excessDays * tPop * (item.perDay||1);
+                    results.push({ shelter: s, surplusDays: excessDays, totalServings: Math.floor(surplusAmount) });
+                }
+            }
+        });
+        return results.sort((a,b)=>b.surplusDays - a.surplusDays);
+    }
+
+    function pendingRequestCount(shelterId = null) {
+        return requests.filter(r => r.status === 'pending' && (!shelterId || r.shelterId === shelterId)).length;
+    }
+
+    function expirationStatus(dateStr) {
+        if (!dateStr) return { expired: false, days: 999, label: '期限なし', cls: 'text-gray-400' };
+        const today = new Date(); today.setHours(0,0,0,0);
+        const exp = new Date(dateStr); exp.setHours(0,0,0,0);
+        const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) return { expired: true, days: diffDays, label: `期限切れ (${Math.abs(diffDays)}日前)`, cls: 'text-red-500 font-bold' };
+        if (diffDays === 0) return { expired: false, days: 0, label: '本日まで', cls: 'text-orange-500 font-bold' };
+        if (diffDays <= 7) return { expired: false, days: diffDays, label: `残り${diffDays}日`, cls: 'text-amber-500 font-bold' };
+        return { expired: false, days: diffDays, label: `残り${diffDays}日`, cls: 'text-emerald-600' };
+    }
+
+    function daysLabel(rd) {
+        if (rd === 999) return { text: '対象外', bg: 'bg-gray-100', color: 'text-gray-400' };
+        if (rd <= 3) return { text: rd.toFixed(1)+'日', bg: 'bg-red-100', color: 'text-red-700' };
+        if (rd <= 7) return { text: rd.toFixed(1)+'日', bg: 'bg-yellow-100', color: 'text-yellow-700' };
+        return { text: rd.toFixed(1)+'日', bg: 'bg-emerald-100', color: 'text-emerald-700' };
+    }
+
+    // ═══════════════════════════════════════════
+    //  5. メインレンダラー
+    // ═══════════════════════════════════════════
+    function render() {
+        const app = document.getElementById('app');
+        let html = '';
+
+        if (state.currentScreen === 'roleSelect') html = screenRoleSelect();
+        else if (state.currentScreen === 'adminAuth') html = screenAdminAuth();
+        else if (state.currentScreen === 'adminAuthBiometric') html = screenAdminAuthBiometric();
+        else if (state.currentScreen === 'adminAuthPIN') html = screenAdminAuthPIN();
+        else if (state.currentScreen === 'shelterSelect') html = screenShelterSelect();
+        else if (state.currentScreen === 'groupRegister') html = screenGroupRegister();
+        else if (state.currentScreen === 'userMain') html = screenUserMain();
+        else if (state.currentScreen === 'adminDashboard') html = screenAdminDashboard();
+        else if (state.currentScreen === 'adminShelterDetail') html = screenAdminShelterDetail();
+        else if (state.currentScreen === 'adminRequests') html = screenAdminRequests();
+        else if (state.currentScreen === 'adminCalendar') html = screenAdminCalendar();
+
+        html += renderModal();
+        if (state.toast) html += renderToast();
+
+        app.innerHTML = html;
+    }
+
+    // ═══════════════════════════════════════════
+    //  6. 画面コンポーネント
+    // ═══════════════════════════════════════════
+
+    function screenRoleSelect() {
+        return `
+        <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
+            <div class="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500 rounded-full blur-[100px] opacity-30"></div>
+            <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
+            
+            <div class="z-10 text-center mb-12">
+                <h1 class="text-4xl font-black mb-3 tracking-tight">ShelVentory</h1>
+                <p class="text-sm opacity-80 font-bold tracking-widest">避難所物資ナビ</p>
+            </div>
+            
+            <div class="z-10 w-full space-y-4">
+                <button onclick="selectRole('user')" class="w-full relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 p-6 text-left shadow-xl btn-press">
+                    <div class="flex items-center gap-4">
+                        <div class="text-4xl bg-white/20 rounded-full p-3 backdrop-blur-sm">🏃</div>
+                        <div>
+                            <h2 class="text-xl font-bold">避難者として利用</h2>
+                            <p class="text-xs opacity-90 mt-1">物資の確認・リクエスト・人数登録</p>
+                        </div>
+                    </div>
+                </button>
+                <button onclick="selectRole('viewer')" class="w-full relative overflow-hidden rounded-2xl bg-white/10 border border-white/20 p-6 text-left shadow-xl btn-press hover:bg-white/20 transition-colors">
+                    <div class="flex items-center gap-4">
+                        <div class="text-4xl bg-white/10 rounded-full p-3 backdrop-blur-sm">👀</div>
+                        <div>
+                            <h2 class="text-xl font-bold">閲覧のみ（登録不要）</h2>
+                            <p class="text-xs text-white/70 mt-1">現在の物資在庫状況を見るだけ</p>
+                        </div>
+                    </div>
+                </button>
+                <button onclick="selectRole('admin')" class="w-full relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 p-6 text-left shadow-xl btn-press">
+                    <div class="flex items-center gap-4">
+                        <div class="text-4xl bg-white/20 rounded-full p-3 backdrop-blur-sm">📋</div>
+                        <div>
+                            <h2 class="text-xl font-bold">避難施設管理者として利用</h2>
+                            <p class="text-xs opacity-90 mt-1">在庫管理・リクエスト対応</p>
+                        </div>
+                    </div>
+                </button>
+            </div>
+        </div>`;
+    }
+
+    function screenAdminAuth() {
+        return `
+        <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
+            <div class="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
+            
+            <div class="z-10 text-center mb-10 w-full">
+                <button onclick="navigateTo('roleSelect')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm">← 戻る</button>
+                <div class="text-5xl mb-4">🔐</div>
+                <h1 class="text-2xl font-bold mb-2">避難施設管理者 認証</h1>
+                <p class="text-xs opacity-80">ダッシュボードにアクセスするための<br>認証方法を選択してください</p>
+            </div>
+            
+            <div class="z-10 w-full space-y-4">
+                <button onclick="startBiometricAuth()" class="w-full rounded-2xl bg-indigo-500 py-4 font-bold shadow-lg btn-press flex items-center justify-center gap-2 text-lg">
+                    <span class="text-2xl">👤</span> 生体認証 (推奨)
+                </button>
+                <button onclick="navigateTo('adminAuthPIN')" class="w-full rounded-2xl bg-white/20 hover:bg-white/30 border border-white/10 py-4 font-bold transition-colors btn-press flex items-center justify-center gap-2 text-lg">
+                    <span class="text-2xl">🔢</span> PIN認証
+                </button>
+            </div>
+        </div>`;
+    }
+
+    function startBiometricAuth() {
+        navigateTo('adminAuthBiometric');
+        setTimeout(() => {
+            if (state.currentScreen === 'adminAuthBiometric') {
+                verifyAdminAuth('passkey');
+            }
+        }, 1500);
+    }
+
+    function screenAdminAuthBiometric() {
+        return `
+        <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
+            <div class="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
+            
+            <button onclick="navigateTo('adminAuth')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm z-10">← キャンセル</button>
+
+            <div class="z-10 text-center mb-10 w-full mt-8">
+                <div class="text-6xl mb-6 animate-pulse">👤</div>
+                <h1 class="text-2xl font-bold mb-2">生体認証を実行中...</h1>
+                <p class="text-xs opacity-80">デバイスのセンサーを確認しています</p>
+            </div>
+            
+            <div class="z-10 w-full px-4 flex justify-center mt-4">
+                <div class="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        </div>`;
+    }
+
+    function screenAdminAuthPIN() {
+        return `
+        <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
+            <div class="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
+            
+            <button onclick="navigateTo('adminAuth')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm z-10">← 戻る</button>
+
+            <div class="z-10 text-center mb-10 w-full mt-8">
+                <div class="text-6xl mb-6">🔢</div>
+                <h1 class="text-2xl font-bold mb-2">PIN認証</h1>
+                <p class="text-xs opacity-80">暗証番号を入力してください</p>
+            </div>
+            
+            <div class="z-10 w-full space-y-4 px-4">
+                <input type="password" id="admin-pin" placeholder="入力なしでも通過可能" class="w-full rounded-xl bg-white/20 border border-white/30 p-4 text-center text-xl font-bold text-white placeholder:text-white/40 placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 tracking-widest shadow-inner">
+                <button onclick="verifyAdminAuth('pin')" class="w-full rounded-2xl bg-indigo-500 hover:bg-indigo-400 py-4 font-bold transition-colors btn-press shadow-lg text-lg">
+                    ログイン
+                </button>
+            </div>
+        </div>`;
+    }
+
+    function verifyAdminAuth(type) {
+        if (type === 'passkey') {
+            showToast('✅', '生体認証に成功しました', 'bg-emerald-600');
+            setTimeout(() => navigateTo('adminDashboard'), 500);
+        } else if (type === 'pin') {
+            showToast('✅', 'PIN認証に成功しました', 'bg-emerald-600');
+            setTimeout(() => navigateTo('adminDashboard'), 500);
+        }
+    }
+
+    function openGuide() {
+        state.modal = 'guide';
+        render();
+    }
+
+    function screenShelterSelect() {
+        const isUser = state.currentRole === 'user';
+        const bg = isUser ? 'from-emerald-600 to-teal-600' : 'from-indigo-600 to-purple-600';
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r ${bg} px-6 pb-6 pt-12 shadow-md text-white fade-in">
+            <button onclick="navigateTo('roleSelect')" class="mb-4 flex items-center text-sm font-medium opacity-80 btn-press-sm">← 戻る</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-2xl font-bold">現在の避難所を選択</h1>
+                ${state.currentRole === 'user' ? `<button onclick="openGuide()" class="flex items-center gap-1 text-[15px] font-bold bg-white/20 rounded-full px-3 py-1.5 btn-press-sm">❔ 使い方ガイド</button>` : ''}
+            </div>
+            <p class="mt-2 text-sm opacity-90">滞在している、または管理する避難所を選んでください。</p>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-3 slide-in-right">
+            ${shelters.map(s => `
+                <button onclick="chooseShelter('${s.id}')" class="w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm btn-press active:bg-gray-50 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-800">${s.name}</h2>
+                        <p class="text-xs text-gray-500">想定収容人数: ${s.evacuees}人</p>
+                    </div>
+                    <div class="text-gray-300">❯</div>
+                </button>
+            `).join('')}
+        </div>`;
+    }
+
+    function renderMemberCards(members) {
+        if (!members || members.length === 0) {
+            return '<div class="text-center py-6 text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-2xl">メンバーが追加されていません</div>';
+        }
+
+        return members.map((m, index) => {
+            const tInfo = memberTypes.find(t => t.id === m.type);
+            if (m.disabled) {
+                return `
+                <div class="rounded-2xl border border-gray-200 bg-gray-100 overflow-hidden mb-3 opacity-60">
+                    <div class="flex items-center justify-between p-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xl grayscale">${tInfo.emoji}</div>
+                            <div class="text-left line-through text-gray-500">
+                                <p class="font-bold text-sm">${m.name}</p>
+                            </div>
+                        </div>
+                        <button onclick="toggleDisableMember('${m.id}')" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">有効化</button>
+                    </div>
+                </div>`;
+            }
+
+            const nList = needsByType[m.type] || [];
+            const isExpanded = state.expandedMember === m.id;
+            
+            let contentHtml = '';
+            if (isExpanded) {
+                let needsHtml = nList.length > 0 ? nList.map(n => {
+                    const isChecked = !!m.needs[n.id];
+                    const hasReq = !!m.requestItems[n.id];
+                    
+                    let optsHtml = '';
+                    if (n.options && isChecked) {
+                        optsHtml = `
+                        <div class="ml-6 mt-2 flex items-center gap-2">
+                            <span class="text-[10px] text-gray-500">サイズ:</span>
+                            ${n.options.map(opt => `
+                                <button onclick="setMemberNeedOption('${m.id}', '${n.id}', '${opt}')" 
+                                    class="px-2 py-0.5 rounded-full text-[10px] font-bold btn-press-sm ${m.needs[n.id+'Option']===opt?'bg-emerald-500 text-white':'border border-gray-300 text-gray-500'}">
+                                    ${opt}
+                                </button>
+                            `).join('')}
+                        </div>`;
+                    }
+
+                    return `
+                    <div class="py-2 border-b border-gray-50 last:border-0">
+                        <div class="flex items-center justify-between">
+                            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <input type="checkbox" ${isChecked?'checked':''} onchange="toggleMemberNeed('${m.id}', '${n.id}')" class="w-4 h-4 rounded accent-emerald-500">
+                                ${n.emoji} ${n.name}
+                            </label>
+                            ${isChecked ? `
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] font-bold ${hasReq ? 'text-orange-500' : 'text-gray-400'}">📩 リクエスト</span>
+                                <div class="relative inline-block w-8 mr-2 align-middle select-none transition duration-200 ease-in" onclick="toggleMemberRequest('${m.id}', '${n.id}', '${n.itemId}', '${n.name}')">
+                                    <input type="checkbox" name="toggle" ${hasReq?'checked':''} class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer" style="pointer-events: none;"/>
+                                    <label class="toggle-label block overflow-hidden h-4 rounded-full bg-gray-300 cursor-pointer"></label>
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>
+                        ${optsHtml}
+                    </div>`;
+                }).join('') : '<p class="text-[10px] text-gray-400 py-1">特別な設定項目はありません</p>';
+
+                contentHtml = `
+                <div class="p-3 bg-white border-t border-gray-100 space-y-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 block mb-1">名前・呼称（自由に編集可）</label>
+                        <input type="text" value="${m.name}" onchange="updateMemberName('${m.id}', this.value)" class="w-full text-sm font-bold text-gray-800 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                    </div>
+                    <div class="rounded-xl bg-emerald-50/50 border border-emerald-100 p-3">
+                        <h4 class="text-[10px] font-bold text-emerald-800 mb-2">必要なもの・配慮</h4>
+                        ${needsHtml}
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 block mb-1">その他の特記事項（アレルギー等）</label>
+                        <textarea onchange="updateMemberNotes('${m.id}', this.value)" placeholder="例: 小麦アレルギー、車椅子利用など" class="w-full text-xs text-gray-800 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 h-16 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-300">${m.specialNotes||''}</textarea>
+                    </div>
+                    <div class="pt-2 text-right">
+                        <button onclick="toggleDisableMember('${m.id}')" class="text-xs font-bold text-gray-500 btn-press-sm px-3 py-1 bg-gray-100 rounded-lg">このメンバーを無効化</button>
+                    </div>
+                </div>`;
+            }
+
+            const reqCount = Object.keys(m.requestItems).length;
+
+            return `
+            <div class="rounded-2xl border ${isExpanded ? 'border-emerald-300 shadow-md' : 'border-gray-200 shadow-sm'} bg-white overflow-hidden mb-3 transition-all">
+                <button onclick="toggleMemberExpand('${m.id}')" class="w-full flex items-center justify-between p-3 ${isExpanded ? 'bg-emerald-50' : 'active:bg-gray-50'}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl shadow-inner">${tInfo.emoji}</div>
+                        <div class="text-left">
+                            <p class="font-bold text-gray-800 text-sm">${m.name}</p>
+                            <p class="text-[10px] text-gray-500">${tInfo.name} (${tInfo.age})</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        ${reqCount > 0 ? `<span class="bg-orange-100 text-orange-600 text-[9px] font-bold px-2 py-0.5 rounded-full">📩 ${reqCount}件</span>` : ''}
+                        <span class="text-gray-400 text-xs">${isExpanded ? '▲' : '▼'}</span>
+                    </div>
+                </button>
+                ${contentHtml}
+            </div>`;
+        }).join('');
+    }
+
+    function screenGroupRegister() {
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 pb-6 pt-12 shadow-md text-white fade-in">
+            <button onclick="navigateTo('roleSelect')" class="mb-4 flex items-center text-sm font-medium opacity-80 btn-press-sm touch-manipulation">← 戻る</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-2xl font-bold">メンバー登録</h1>
+                <button onclick="openGuide()" class="flex items-center gap-1 text-[15px] font-bold bg-white/20 rounded-full px-3 py-1.5 btn-press-sm touch-manipulation">❔ 使い方ガイド</button>
+            </div>
+            <p class="mt-2 text-xs opacity-90">あなたを含めた避難グループのメンバーを追加してください。一人ひとりのニーズを細かく設定できます。</p>
+        </div>
+        <div class="flex-1 flex flex-col overflow-hidden relative">
+            <div class="flex-1 overflow-y-auto p-4 pb-[50vh] space-y-2 slide-in-right bg-gray-50">
+                ${renderMemberCards(currentUserGroup ? currentUserGroup.members : [])}
+                
+                <div class="mt-4 p-4 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/30">
+                    <p class="text-xs font-bold text-emerald-700 mb-3 text-center">＋ 新しいメンバーを追加</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        ${memberTypes.map(t => `
+                            <button onclick="addMember('${t.id}')" class="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-emerald-100 shadow-sm btn-press text-emerald-700 touch-manipulation">
+                                <span class="text-2xl mb-1">${t.emoji}</span>
+                                <span class="text-[10px] font-bold">${t.name}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md p-4 pb-6 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] z-50">
+                <button onclick="registerGroup()" class="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 py-4 text-center font-bold text-white shadow-lg btn-press disabled:opacity-50 touch-manipulation" ${(currentUserGroup && currentUserGroup.members.length > 0) ? '' : 'disabled'}>
+                    この内容で登録・入所する
+                </button>
+            </div>
+        </div>`;
+    }
+
+    function screenUserMain() {
+        const s = state.selectedShelter;
+        const myReqs = requests.filter(r => r.groupId === currentUserGroup.id);
+        const myReqCount = myReqs.length;
+        const cats = getAllCategories();
+        
+        let tabHtml = `
+        <div class="flex border-b border-gray-100 bg-white shadow-sm z-10 relative">
+            <button onclick="setUserTab('supplies')" class="flex-1 py-3 text-xs font-bold text-center border-b-2 btn-press-sm transition-colors touch-manipulation ${state.userTab==='supplies'?'border-emerald-500 text-emerald-600':'border-transparent text-gray-400'}">📦 物資</button>
+            ${state.currentRole !== 'viewer' ? `
+            <button onclick="setUserTab('requests')" class="flex-1 py-3 text-xs font-bold text-center border-b-2 btn-press-sm relative transition-colors touch-manipulation ${state.userTab==='requests'?'border-orange-500 text-orange-600':'border-transparent text-gray-400'}">
+                📩 リクエスト
+                ${myReqCount > 0 ? `<span class="absolute top-2 right-4 bg-orange-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">${myReqCount}</span>` : ''}
+            </button>
+            <button onclick="setUserTab('mypage')" class="flex-1 py-3 text-xs font-bold text-center border-b-2 btn-press-sm transition-colors touch-manipulation ${state.userTab==='mypage'?'border-emerald-500 text-emerald-600':'border-transparent text-gray-400'}">👤 メンバー設定</button>
+            ` : ''}
+        </div>`;
+
+        let contentHtml = '';
+        if (state.userTab === 'supplies') {
+            const curCat = cats.find(c => c.id === state.currentCategory) || cats[0];
+            let catTabs = cats.map(c => {
+                const isAct = state.currentCategory === c.id;
+                return `<button onclick="switchCategory('${c.id}')" class="flex shrink-0 items-center gap-1 rounded-full px-3 py-2 text-xs font-bold btn-press-sm transition-colors touch-manipulation ${isAct?'bg-emerald-600 text-white shadow':'border border-gray-200 bg-white text-gray-500'}">${c.emoji} ${c.name}</button>`;
+            }).join('');
+
+            let itemsHtml = curCat.items.map(item => {
+                const isExpanded = state.expandedItem === item.id;
+                const rd = calcRemainingDays(s.id, item.id);
+                const dl = daysLabel(rd);
+                const lots = (supplyLots[s.id] && supplyLots[s.id][item.id]) || [];
+
+                let expandedContent = '';
+                if (isExpanded) {
+                    const sortedLots = [...lots].sort((a,b) => {
+                        if (!a.expirationDate) return 1; if (!b.expirationDate) return -1;
+                        return a.expirationDate.localeCompare(b.expirationDate);
+                    });
+                    let lotsHtml = sortedLots.length > 0 ? sortedLots.map(l => {
+                        const es = expirationStatus(l.expirationDate);
+                        const lotServings = l.servingsPerUnit * l.quantity;
+                        return `
+                        <div class="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0 ${es.expired?'opacity-40':''}">
+                            ${l.image ? `<img src="${l.image}" class="w-10 h-10 rounded-lg object-cover shrink-0">` : `<div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg shrink-0">${item.emoji}</div>`}
+                            <div>
+                                <p class="text-xs font-bold text-gray-800">在庫: ${lotServings}${item.unit}</p>
+                                <p class="text-[10px] ${es.cls}">${es.expired?'🚫':''}${es.label}</p>
+                            </div>
+                        </div>`;
+                    }).join('') : '<p class="text-xs text-gray-400 py-2">在庫データなし</p>';
+
+                    expandedContent = `
+                    <div class="border-t border-gray-100 bg-gray-50/70 p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-[10px] font-bold text-gray-500">詳細情報</p>
+                            ${state.currentRole !== 'viewer' ? `<button onclick="openRequestModal('${item.id}','${item.name}')" class="text-[10px] font-bold text-orange-600 bg-orange-100 px-3 py-1.5 rounded-full btn-press-sm flex items-center gap-1 touch-manipulation">📩 リクエスト作成</button>` : ''}
+                        </div>
+                        ${lotsHtml}
+                    </div>`;
+                }
+
+                return `
+                <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm mb-3 fade-in">
+                    <button onclick="toggleExpand('${item.id}')" class="flex w-full items-center justify-between p-4 text-left active:bg-gray-50 touch-manipulation">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${item.emoji}</span>
+                            <h3 class="font-bold text-gray-800 text-sm">${item.name}</h3>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] px-2 py-1 rounded-full font-bold ${dl.bg} ${dl.color}">${dl.text}</span>
+                            <span class="text-gray-300 text-xs">${isExpanded?'▲':'▼'}</span>
+                        </div>
+                    </button>
+                    ${expandedContent}
+                </div>`;
+            }).join('');
+            
+            if (curCat.id === 'other' && state.currentRole !== 'viewer') {
+                itemsHtml += `
+                <div class="mt-4 p-4 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/50 text-center">
+                    <p class="text-sm font-bold text-orange-700 mb-2">リストにない物資をリクエスト</p>
+                    <button onclick="openRequestModal('custom', 'その他の物資')" class="bg-orange-500 text-white font-bold py-3 px-6 rounded-xl shadow-md btn-press touch-manipulation">
+                        リクエストを送信
+                    </button>
+                </div>
+                `;
+            }
+
+            contentHtml = `
+            <div class="flex gap-2 overflow-x-auto bg-white p-3 pb-2 shadow-sm relative z-0">${catTabs}</div>
+            <div class="flex-1 overflow-y-auto p-4 pb-20 space-y-1">${itemsHtml}</div>
+            ${state.currentRole !== 'viewer' ? `<button onclick="setUserTab('requests')" class="absolute bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-orange-400 to-red-500 text-white rounded-full shadow-lg shadow-orange-500/40 flex items-center justify-center text-2xl btn-press z-20 touch-manipulation">📩</button>` : ''}`;
+        } else if (state.userTab === 'requests') {
+            const sortedReqs = [...myReqs].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            let reqHtml = sortedReqs.length > 0 ? sortedReqs.map(r => {
+                const statusMap = { pending:'📤 処理待ち', inProgress:'🔄 対応中', completed:'✅ 対応済み' };
+                const statusColor = r.status === 'completed' ? 'text-emerald-700 bg-emerald-100 border border-emerald-300' : 
+                                   (r.status === 'inProgress' ? 'text-indigo-600 bg-indigo-50 border border-indigo-200' : 'text-orange-600 bg-orange-50 border border-orange-200');
+
+                return `
+                <div class="relative rounded-2xl border border-gray-200 bg-white shadow-sm p-4 fade-in overflow-hidden mb-3">
+                    <div class="flex items-center justify-between mb-3 relative z-10">
+                        <h3 class="font-bold text-gray-800 text-base">${r.itemName}</h3>
+                        <span class="text-xs font-bold px-3 py-1 rounded-full ${statusColor}">${statusMap[r.status]||r.status}</span>
+                    </div>
+                    <div class="flex flex-col gap-1 text-[10px] text-gray-500 mb-2 relative z-10">
+                        <span class="bg-gray-50 px-2 py-1 rounded text-gray-700 inline-flex self-start border border-gray-100 shadow-sm">👤 対象: ${r.forMemberName || 'グループ全体'}</span>
+                        <span class="px-2 py-1">数量: ${r.quantity} | 希望期限: ${r.deadlineDays ? (r.deadlineDays===7?'1週間以内':r.deadlineDays===14?'2週間以内':'1か月以内') : '指定なし'}</span>
+                    </div>
+                    <p class="text-[9px] text-gray-400 mt-2 text-right">${new Date(r.createdAt).toLocaleString('ja-JP')}</p>
+                </div>
+                `;
+            }).join('') : `
+            <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 py-20 fade-in">
+                <span class="text-4xl mb-3 opacity-50">📩</span>
+                <p class="text-sm font-bold">リクエスト履歴はありません</p>
+                <p class="text-xs mt-2">必要な物資があれば、<br>物資一覧またはメンバー設定から<br>いつでもリクエストを作成できます。</p>
+            </div>`;
+            contentHtml = `<div class="flex-1 overflow-y-auto p-4 pb-8 bg-gray-50/50">${reqHtml}</div>`;
+        } else if (state.userTab === 'mypage') {
+            const mTotal = currentUserGroup.members.length;
+            const mCal = calcGroupCalories(currentUserGroup);
+            const mWat = calcGroupWater(currentUserGroup);
+
+            contentHtml = `
+            <div class="flex-1 overflow-y-auto p-4 pb-20 space-y-4 fade-in bg-gray-50">
+                ${mTotal > 0 ? `
+                <div class="rounded-2xl bg-white border border-gray-200 p-4 shadow-sm">
+                    <h3 class="text-[10px] font-bold text-gray-500 mb-3 uppercase tracking-wider">📊 1日あたりの必要量</h3>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div><p class="text-xl font-black text-emerald-600">${mTotal}</p><p class="text-[9px] text-gray-500">メンバー数</p></div>
+                        <div><p class="text-xl font-black text-orange-500">${mCal.toLocaleString()}</p><p class="text-[9px] text-gray-500">kcal/日</p></div>
+                        <div><p class="text-xl font-black text-blue-500">${mWat.toFixed(1)}</p><p class="text-[9px] text-gray-500">L/日</p></div>
+                    </div>
+                </div>` : ''}
+
+                <div>
+                    <h3 class="text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-wider pl-1">👥 メンバー設定</h3>
+                    ${renderMemberCards(currentUserGroup.members)}
+                </div>
+
+                <div class="mt-4 p-4 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/30">
+                    <p class="text-[10px] font-bold text-emerald-700 mb-2 text-center">メンバーを追加</p>
+                    <div class="grid grid-cols-4 gap-1">
+                        ${memberTypes.map(t => `
+                            <button onclick="addMember('${t.id}')" class="flex flex-col items-center justify-center p-2 rounded-xl bg-white border border-emerald-100 shadow-sm btn-press text-emerald-700 touch-manipulation">
+                                <span class="text-lg">${t.emoji}</span>
+                                <span class="text-[9px] font-bold mt-1">${t.name}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md p-4 pb-6 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] z-50">
+                <button onclick="saveGroupEdits()" class="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3.5 text-center font-bold text-white shadow-lg btn-press touch-manipulation">
+                    💾 変更を保存
+                </button>
+            </div>`;
+        }
+
+        const gTotal = currentUserGroup ? currentUserGroup.members.length : 0;
+
+        return `
+        <div class="z-20 rounded-b-3xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 pb-4 pt-10 shadow-md text-white relative">
+            <button onclick="navigateTo('shelterSelect')" class="mb-1 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← 避難所を変更</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-lg font-bold tracking-tight">${s.name}</h1>
+                <button onclick="openGuide()" class="flex items-center gap-1 text-[15px] font-bold bg-white/20 rounded-full px-3 py-1.5 btn-press-sm touch-manipulation">❔ 使い方ガイド</button>
+            </div>
+            ${gTotal > 0 ? `<div class="mt-2 flex gap-3 text-xs">
+                <span class="bg-white/20 rounded-full px-2 py-1 flex items-center gap-1">👥${gTotal}人</span>
+                <span class="bg-white/20 rounded-full px-2 py-1 flex items-center gap-1">🔥${calcGroupCalories(currentUserGroup).toLocaleString()}kcal</span>
+                <span class="bg-white/20 rounded-full px-2 py-1 flex items-center gap-1">💧${calcGroupWater(currentUserGroup).toFixed(1)}L</span>
+            </div>` : ''}
+        </div>
+        ${tabHtml}
+        <div class="flex-1 flex flex-col overflow-hidden relative">${contentHtml}</div>`;
+    }
+
+    function screenAdminDashboard() {
+        const totalReqs = pendingRequestCount();
+        let cards = shelters.map(s => {
+            const pop = getShelterPopulation(s.id);
+            const reqCnt = pendingRequestCount(s.id);
+            const waterDays = calcRemainingDays(s.id, 'water');
+            const foodDays = calcRemainingDays(s.id, 'alpha-rice');
+            const minDays = Math.min(waterDays || 999, foodDays || 999);
+            const statusEmoji = minDays <= 3 ? '🔴' : minDays <= 7 ? '🟡' : '🟢';
+
+            return `
+            <button onclick="chooseShelter('${s.id}')" class="w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm btn-press mb-3 touch-manipulation">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-bold text-gray-800">${statusEmoji} ${s.name}</h3>
+                    ${reqCnt > 0 ? `<span class="bg-red-500 text-white text-[10px] font-bold rounded-full px-2 py-0.5 badge-pulse">${reqCnt}件</span>` : ''}
+                </div>
+                <div class="flex gap-4 text-xs text-gray-500">
+                    <span>想定 ${s.evacuees}人</span>
+                    <span class="font-bold ${pop.total>0?'text-indigo-600':'text-gray-400'}">登録 ${pop.total}人 (${pop.groupCount}組)</span>
+                </div>
+                <div class="mt-2 flex gap-2 text-[10px]">
+                    <span class="px-2 py-0.5 rounded-full ${daysLabel(waterDays).bg} ${daysLabel(waterDays).color}">💧水 ${daysLabel(waterDays).text}</span>
+                    <span class="px-2 py-0.5 rounded-full ${daysLabel(foodDays).bg} ${daysLabel(foodDays).color}">🍚食料 ${daysLabel(foodDays).text}</span>
+                </div>
+            </button>`;
+        }).join('');
+
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-5 pt-12 shadow-md text-white fade-in">
+            <button onclick="navigateTo('roleSelect')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← 戻る</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-xl font-bold">管理者ダッシュボード</h1>
+            </div>
+            <p class="mt-1 text-[10px] opacity-70">📍 全${shelters.length}施設の状況</p>
+            <div class="flex items-center justify-between mt-4">
+                <button onclick="navigateTo('adminCalendar')" class="flex-1 mr-2 relative bg-white/20 rounded-xl px-3 py-2 text-sm font-bold btn-press text-center flex items-center justify-center gap-2 border border-indigo-400 touch-manipulation">
+                    📅 カレンダー
+                </button>
+                <button onclick="navigateTo('adminRequests')" class="flex-1 ml-2 relative bg-white/20 rounded-xl px-3 py-2 text-sm font-bold btn-press text-center flex items-center justify-center gap-2 border border-indigo-400 touch-manipulation">
+                    📩 リクエスト
+                    ${totalReqs > 0 ? `<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center badge-pulse">${totalReqs}</span>` : ''}
+                </button>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 pb-[50vh] fade-in bg-gray-50">${cards}</div>`;
+    }
+
+    function screenAdminShelterDetail() {
+        const s = state.selectedShelter;
+        const pop = getShelterPopulation(s.id);
+        const cats = getAllCategories();
+        const curCat = cats.find(c => c.id === state.currentCategory) || cats[0];
+
+        let catTabs = cats.map(c => {
+            const isAct = state.currentCategory === c.id;
+            return `<button onclick="switchCategory('${c.id}')" class="flex shrink-0 items-center gap-1 rounded-full px-3 py-2 text-xs font-bold btn-press-sm transition-colors touch-manipulation ${isAct?'bg-indigo-600 text-white shadow':'border border-gray-200 bg-white text-gray-500'}">${c.emoji} ${c.name}</button>`;
+        }).join('');
+
+        let itemsHtml = curCat.items.map(item => {
+            const totalServ = getTotalServings(s.id, item.id);
+            const validServ = getValidServings(s.id, item.id);
+            const rd = calcRemainingDays(s.id, item.id);
+            const dl = daysLabel(rd);
+            const lots = (supplyLots[s.id] && supplyLots[s.id][item.id]) || [];
+            const isExpanded = state.expandedItem === item.id;
+            const surplus = getNearbySurplus(s.id, item.id);
+
+            let expandedContent = '';
+            if (isExpanded) {
+                const sortedLots = [...lots].sort((a,b) => {
+                    if (!a.expirationDate) return 1; if (!b.expirationDate) return -1;
+                    return a.expirationDate.localeCompare(b.expirationDate);
+                });
+                let lotsHtml = sortedLots.length > 0 ? sortedLots.map(l => {
+                    const es = expirationStatus(l.expirationDate);
+                    const lotServings = l.servingsPerUnit * l.quantity;
+                    return `
+                    <div class="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0 ${es.expired?'opacity-40':''}">
+                        ${l.image ? `<img src="${l.image}" class="w-10 h-10 rounded-lg object-cover shrink-0">` : `<div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg shrink-0">${item.emoji}</div>`}
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-bold text-gray-800">${l.servingsPerUnit}${item.unit}/個 × ${l.quantity}個 = <span class="text-indigo-600">${lotServings}${item.unit}</span></p>
+                            <p class="text-[10px] ${es.cls}">${es.expired?'🚫':''}${es.label}</p>
+                        </div>
+                        <button onclick="deleteLot('${item.id}','${l.id}')" class="text-red-400 text-xs btn-press-sm px-2 touch-manipulation">✕</button>
+                    </div>`;
+                }).join('') : '<p class="text-[10px] text-gray-400 py-2">ロットが登録されていません</p>';
+
+                let surplusHtml = surplus.length > 0 ? `
+                <div class="mt-3 rounded-xl bg-blue-50 border border-blue-200 p-3">
+                    <p class="text-[10px] font-bold text-blue-700 mb-1">🔄 近隣の余剰</p>
+                    ${surplus.map(sr => `<p class="text-[10px] text-blue-600">📍 ${sr.shelter.name}: +${sr.totalServings}${item.unit} (${sr.surplusDays.toFixed(1)}日分)</p>`).join('')}
+                </div>` : '';
+
+                expandedContent = `
+                <div class="border-t border-gray-100 bg-gray-50/70 p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-bold text-gray-500">内訳（期限順）</p>
+                        <button onclick="openAddLotModal('${item.id}','${item.name}','${item.unit}')" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm flex items-center gap-1 touch-manipulation">
+                            ＋ 追加
+                        </button>
+                    </div>
+                    ${lotsHtml}
+                    ${surplusHtml}
+                </div>`;
+            }
+
+            return `
+            <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm fade-in">
+                <button onclick="toggleExpand('${item.id}')" class="flex w-full items-center justify-between p-4 text-left active:bg-gray-50 touch-manipulation">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">${item.emoji}</span>
+                        <div>
+                            <h3 class="font-bold text-gray-800 text-sm">${item.name}</h3>
+                            <p class="text-[10px] text-gray-400">有効: ${validServ} ${item.unit}${totalServ !== validServ ? ` (全${totalServ})`:''}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] px-2 py-1 rounded-full font-bold ${dl.bg} ${dl.color}">${dl.text}</span>
+                        <span class="text-gray-300 text-xs">${isExpanded?'▲':'▼'}</span>
+                    </div>
+                </button>
+                ${expandedContent}
+            </div>`;
+        }).join('');
+
+        let groupsSummary = '';
+        if (pop.total > 0) {
+            groupsSummary = `
+            <div class="mx-4 mt-3 rounded-2xl bg-indigo-50 border border-indigo-200 p-3 shadow-sm">
+                <p class="text-[10px] font-bold text-indigo-700 mb-2 uppercase tracking-wider">👥 避難者構成 (${pop.total}人 / ${pop.groupCount}組)</p>
+                <div class="grid grid-cols-4 gap-1 text-center">
+                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">👶</p><p class="text-[10px] font-bold text-indigo-900">${pop.infants}</p></div>
+                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">🧒</p><p class="text-[10px] font-bold text-indigo-900">${pop.children}</p></div>
+                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">🧑</p><p class="text-[10px] font-bold text-indigo-900">${pop.adults}</p></div>
+                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">👴</p><p class="text-[10px] font-bold text-indigo-900">${pop.elderly}</p></div>
+                </div>
+            </div>`;
+        }
+
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-4 pt-10 shadow-md text-white">
+            <button onclick="navigateTo('adminDashboard')" class="mb-1 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボード</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-lg font-bold">${s.name}</h1>
+                <span class="bg-white/20 rounded-full px-3 py-1 text-[10px] font-bold">${pop.total > 0 ? pop.total+'人' : '想定'+s.evacuees+'人'}</span>
+            </div>
+        </div>
+        ${groupsSummary}
+        <div class="flex gap-2 overflow-x-auto bg-white p-3 pb-2 border-b border-gray-100 shadow-sm relative z-0">${catTabs}</div>
+        <div class="flex-1 overflow-y-auto p-4 pb-[50vh] space-y-3 bg-gray-50">
+            ${itemsHtml}
+            <button onclick="openNewItemModal()" class="w-full rounded-2xl border-2 border-dashed border-indigo-300 py-4 text-center text-xs font-bold text-indigo-500 bg-indigo-50/50 btn-press touch-manipulation">＋ 新しい物資を作成</button>
+        </div>`;
+    }
+
+    function screenAdminRequests() {
+        const statusMap = { pending:'📤 未対応', inProgress:'🔄 対応中', completed:'✅ 完了' };
+        const statusColor = { pending:'text-red-600 bg-red-50 border border-red-200', inProgress:'text-indigo-600 bg-indigo-50 border border-indigo-200', completed:'text-emerald-600 bg-emerald-50 border border-emerald-200' };
+        const sorted = [...requests].sort((a,b) => {
+            const order = { pending:0, inProgress:1, completed:2 };
+            return (order[a.status]||0) - (order[b.status]||0) || new Date(b.createdAt) - new Date(a.createdAt);
+        });
+
+        let reqHtml = sorted.length > 0 ? sorted.map(r => {
+            const shelter = shelters.find(s => s.id === r.shelterId);
+            const deadlineText = r.deadlineDays ? (r.deadlineDays===7?'1週間以内':r.deadlineDays===14?'2週間以内':'1か月以内') : '指定なし';
+            return `
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm fade-in mb-3">
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <h3 class="font-bold text-gray-800 text-sm">${r.itemName}</h3>
+                        <p class="text-[9px] text-gray-500">📍 ${shelter?shelter.name:'不明'} | 数量: ${r.quantity}</p>
+                    </div>
+                    <span class="text-[9px] font-bold px-2 py-1 rounded-full ${statusColor[r.status]||''}">${statusMap[r.status]||r.status}</span>
+                </div>
+                <div class="mb-2 bg-gray-50 rounded-lg p-2 flex flex-col gap-1">
+                    <p class="text-[9px] font-bold text-gray-500 flex items-center gap-2">
+                        対象: <span class="text-indigo-600">${r.forMemberName || 'グループ全体'}</span>
+                        ${r.forMemberIds && r.forMemberIds.length > 0 ? (r.forMemberIds.length === 1 ? `<button onclick="openMemberDetail('${r.shelterId}','${r.groupId}','${r.forMemberIds[0]}')" class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm border border-indigo-100 touch-manipulation">👤 対象者の詳細</button>` : `<button onclick="openGroupDetail('${r.shelterId}','${r.groupId}','${r.forMemberIds.join(',')}')" class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm border border-indigo-100 touch-manipulation">👥 対象者 (${r.forMemberIds.length}名) の詳細</button>`) : (r.groupId ? `<button onclick="openGroupDetail('${r.shelterId}','${r.groupId}')" class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm border border-indigo-100 touch-manipulation">👥 グループ詳細</button>` : '')}
+                    </p>
+                    <p class="text-[9px] font-bold text-orange-600">希望期限: ${deadlineText} <span class="text-gray-400 font-normal">(${r.deadlineDate})</span></p>
+                    ${r.note ? `<p class="text-[10px] text-gray-700 bg-orange-50/50 border border-orange-100/50 p-2 rounded-lg mt-1 break-words">📝 ${r.note.replace(/\n/g, '<br>')}</p>` : ''}
+                </div>
+                <div class="flex items-center justify-between border-t border-gray-100 pt-2 mt-1">
+                    <p class="text-[9px] text-gray-400">作成: ${new Date(r.createdAt).toLocaleString('ja-JP')}</p>
+                    <div class="flex gap-2">
+                        ${r.status==='pending' ? `<button onclick="updateRequestStatus('${r.id}','inProgress')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm border border-indigo-200 touch-manipulation">対応中にする</button>` : ''}
+                        ${r.status==='inProgress' ? `<button onclick="updateRequestStatus('${r.id}','completed')" class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full btn-press-sm border border-emerald-200 touch-manipulation">完了にする</button>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('') : '<div class="text-center py-20 text-sm text-gray-400 fade-in">リクエストはありません</div>';
+
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-5 pt-10 shadow-md text-white fade-in">
+            <button onclick="navigateTo('adminDashboard')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボード</button>
+            <h1 class="text-xl font-bold">📩 リクエスト一覧</h1>
+            <p class="text-[10px] opacity-70 mt-1">全避難所からのリクエスト ${requests.length}件（未対応: ${pendingRequestCount()}件）</p>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 pb-[50vh] fade-in bg-gray-50">${reqHtml}</div>`;
+    }
+
+    function screenAdminCalendar() {
+        const today = new Date();
+        if (!state.calendarMonth) {
+            state.calendarMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        }
+        
+        const year = state.calendarMonth.getFullYear();
+        const month = state.calendarMonth.getMonth();
+        
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        
+        let daysHtml = '';
+        for (let i = 0; i < firstDay; i++) {
+            daysHtml += `<div class="p-2 text-center"></div>`;
+        }
+        
+        const activeRequests = requests.filter(r => r.status !== 'completed'); // 完了したものはカレンダーの赤丸から除外
+        
+        for (let i = 1; i <= daysInMonth; i++) {
+            const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+            const reqCount = activeRequests.filter(r => r.deadlineDate === dateStr).length;
+            const isSelected = state.calendarSelectedDate === dateStr;
+            const isToday = dateStr === today.toISOString().split('T')[0];
+            
+            let classes = "w-10 h-10 mx-auto rounded-full flex flex-col items-center justify-center relative btn-press-sm transition-all touch-manipulation ";
+            if (isSelected) classes += "bg-indigo-600 text-white font-bold shadow-md ";
+            else if (isToday) classes += "bg-indigo-100 text-indigo-700 font-bold ";
+            else classes += "text-gray-700 active:bg-gray-200 ";
+            
+            daysHtml += `
+            <div class="py-1">
+                <button onclick="selectCalendarDate('${dateStr}')" class="${classes}">
+                    <span class="text-sm">${i}</span>
+                    ${reqCount > 0 ? `<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 border border-white"></span>` : ''}
+                </button>
+            </div>`;
+        }
+        
+        let reqHtml = '';
+        if (state.calendarSelectedDate) {
+            const dayReqs = requests.filter(r => r.deadlineDate === state.calendarSelectedDate);
+            if (dayReqs.length > 0) {
+                const statusMap = { pending:'📤 未対応', inProgress:'🔄 対応中', completed:'✅ 完了' };
+                const statusColor = { pending:'text-red-600 bg-red-50 border-red-200', inProgress:'text-indigo-600 bg-indigo-50 border-indigo-200', completed:'text-emerald-600 bg-emerald-50 border-emerald-200' };
+                
+                reqHtml = dayReqs.map(r => {
+                    const shelter = shelters.find(sh => sh.id === r.shelterId);
+                    return `
+                    <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm mb-3 fade-in">
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <h3 class="font-bold text-gray-800 text-sm">${r.itemName}</h3>
+                                <p class="text-[9px] text-gray-500">📍 ${shelter?shelter.name:'不明'} | 数量: ${r.quantity}</p>
+                            </div>
+                            <span class="text-[9px] font-bold px-2 py-1 rounded-full border ${statusColor[r.status]||''}">${statusMap[r.status]||r.status}</span>
+                        </div>
+                        <div class="mb-2 bg-gray-50 rounded-lg p-2">
+                            <p class="text-[9px] font-bold text-gray-500 flex items-center gap-2">
+                                対象: <span class="text-indigo-600">${r.forMemberName || 'グループ全体'}</span>
+                                ${r.forMemberIds && r.forMemberIds.length > 0 ? (r.forMemberIds.length === 1 ? `<button onclick="openMemberDetail('${r.shelterId}','${r.groupId}','${r.forMemberIds[0]}')" class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm border border-indigo-100 touch-manipulation">👤 対象者の詳細</button>` : `<button onclick="openGroupDetail('${r.shelterId}','${r.groupId}','${r.forMemberIds.join(',')}')" class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm border border-indigo-100 touch-manipulation">👥 対象者 (${r.forMemberIds.length}名) の詳細</button>`) : (r.groupId ? `<button onclick="openGroupDetail('${r.shelterId}','${r.groupId}')" class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm border border-indigo-100 touch-manipulation">👥 グループ詳細</button>` : '')}
+                            </p>
+                            ${r.note ? `<p class="text-[10px] text-gray-700 bg-orange-50/50 border border-orange-100/50 p-2 rounded-lg mt-1 break-words">📝 ${r.note.replace(/\n/g, '<br>')}</p>` : ''}
+                        </div>
+                        <div class="flex items-center justify-between border-t border-gray-100 pt-2 mt-1">
+                            <p class="text-[9px] text-gray-400">作成: ${new Date(r.createdAt).toLocaleDateString('ja-JP')}</p>
+                            <div class="flex gap-2">
+                                ${r.status==='pending' ? `<button onclick="updateRequestStatus('${r.id}','inProgress')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm border border-indigo-200 touch-manipulation">対応中</button>` : ''}
+                                ${r.status==='inProgress' ? `<button onclick="updateRequestStatus('${r.id}','completed')" class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full btn-press-sm border border-emerald-200 touch-manipulation">完了</button>` : ''}
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } else {
+                reqHtml = '<div class="text-center py-10 text-sm text-gray-400 fade-in">この日の期限に設定された<br>リクエストはありません</div>';
+            }
+        } else {
+            reqHtml = '<div class="text-center py-10 text-sm text-gray-400 fade-in">日付をタップすると<br>その日が期限のリクエストが表示されます</div>';
+        }
+        
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-5 pt-10 shadow-md text-white fade-in">
+            <button onclick="navigateTo('adminDashboard')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボード</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-xl font-bold">📅 カレンダー</h1>
+                <div class="flex gap-2">
+                    <button onclick="changeCalendarMonth(-1)" class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold btn-press-sm touch-manipulation">◀</button>
+                    <button onclick="changeCalendarMonth(1)" class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold btn-press-sm touch-manipulation">▶</button>
+                </div>
+            </div>
+            <p class="text-center font-bold mt-2 text-lg tracking-wider">${year}年 ${month + 1}月</p>
+        </div>
+        <div class="flex-1 overflow-y-auto bg-gray-50 flex flex-col relative">
+            <div class="bg-white p-4 shadow-sm border-b border-gray-200 z-10 shrink-0">
+                <div class="grid grid-cols-7 text-center text-[10px] font-bold text-gray-500 mb-2">
+                    <div class="text-red-500">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="text-blue-500">土</div>
+                </div>
+                <div class="grid grid-cols-7">
+                    ${daysHtml}
+                </div>
+            </div>
+            <div class="p-4 flex-1">
+                <h2 class="text-[10px] font-bold text-indigo-700 mb-3 uppercase tracking-wider flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    ${state.calendarSelectedDate ? state.calendarSelectedDate.replace(/-/g, '/') + ' 期限のリクエスト' : '選択した日付のリクエスト'}
+                </h2>
+                ${reqHtml}
+            </div>
+        </div>`;
+    }
+
+    // ═══════════════════════════════════════════
+    //  7. モーダル
+    // ═══════════════════════════════════════════
+    function renderModal() {
+        if (!state.modal) return '';
+        let inner = '';
+        if (state.modal === 'addLot') inner = modalAddLot();
+        else if (state.modal === 'newItem') inner = modalNewItem();
+        else if (state.modal === 'sendRequest') inner = modalSendRequest();
+        else if (state.modal === 'guide') inner = modalGuide();
+        else if (state.modal === 'memberDetail') inner = modalMemberDetail();
+        else if (state.modal === 'groupDetail') inner = modalGroupDetail();
+        else return '';
+
+        return `
+        <div class="absolute inset-0 z-50 flex items-end justify-center modal-bg" onclick="closeModalBg(event)">
+            <div class="absolute inset-0 bg-black/50"></div>
+            <div class="relative w-full max-h-[90%] overflow-y-auto bg-white rounded-t-3xl p-6 pb-[50vh] modal-content shadow-[0_-20px_40px_rgba(0,0,0,0.2)]" onclick="event.stopPropagation()">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-4"></div>
+                ${inner}
+            </div>
+        </div>`;
+    }
+
+    function modalAddLot() {
+        const d = state.modalData;
+        return `
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800">📦 物資を追加</h2>
+            <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 btn-press-sm">✕</button>
+        </div>
+        
+        <div class="mb-4 bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-center justify-center">
+            <p class="text-sm font-bold text-indigo-800">${d.itemName}</p>
+        </div>
+
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">1単位の量 (${d.unit}分)</label>
+                    <input type="number" id="lot-servings" value="${d.servingsPerUnit||1}" min="1" oninput="updateLotPreview()" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-colors">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">数量 (個数)</label>
+                    <input type="number" id="lot-quantity" value="${d.quantity||1}" min="1" oninput="updateLotPreview()" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-colors">
+                </div>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold text-gray-500 uppercase">消費期限 (任意)</label>
+                <input type="date" id="lot-expiry" value="${d.expirationDate||''}" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-colors">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold text-gray-500 uppercase">画像 (任意)</label>
+                <div class="mt-1 flex items-center gap-3">
+                    <input type="file" id="lot-image" accept="image/*" onchange="handleLotImage(event)" class="w-full text-[10px] text-gray-500 file:mr-3 file:rounded-full file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-[10px] file:font-bold file:text-indigo-600 file:cursor-pointer">
+                </div>
+                ${d.image ? `<img src="${d.image}" class="mt-3 w-24 h-24 rounded-xl object-cover border border-gray-200 shadow-sm">` : ''}
+            </div>
+            <div class="rounded-xl bg-gray-900 text-white p-4 text-center shadow-inner mt-2">
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">合計追加量</p>
+                <p class="text-3xl font-black text-indigo-400"><span id="lot-total-val">${(d.servingsPerUnit||1)*(d.quantity||1)}</span> <span class="text-sm font-normal text-gray-300">${d.unit}</span></p>
+            </div>
+            <button onclick="submitAddLot()" class="w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 py-4 text-center font-bold text-white shadow-lg shadow-indigo-500/30 btn-press mt-2">在庫を追加する</button>
+        </div>`;
+    }
+
+    function modalNewItem() {
+        const d = state.modalData || {};
+        const cats = getAllCategories();
+        return `
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800">🆕 新しい物資を作成</h2>
+            <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 btn-press-sm">✕</button>
+        </div>
+
+        <div class="space-y-4">
+            <div>
+                <label class="text-[10px] font-bold text-gray-500 uppercase">物資名</label>
+                <input type="text" id="ni-name" value="${d.name||''}" placeholder="例: 保存用パン" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+            </div>
+            <div>
+                <label class="text-[10px] font-bold text-gray-500 uppercase">カテゴリ</label>
+                <select id="ni-category" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+                    ${cats.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('')}
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">絵文字</label>
+                    <input type="text" id="ni-emoji" value="📦" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-center text-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">単位</label>
+                    <input type="text" id="ni-unit" placeholder="例: 個" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">対象者</label>
+                    <select id="ni-target" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+                        <option value="all">全員</option>
+                        <option value="infant">乳幼児</option>
+                        <option value="child">子供</option>
+                        <option value="elderly">高齢者</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">1人1日消費量</label>
+                    <input type="number" id="ni-perday" value="1" min="0" step="0.1" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+                </div>
+            </div>
+            <button onclick="submitNewItem()" class="w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 py-4 text-center font-bold text-white shadow-lg shadow-indigo-500/30 btn-press mt-2">作成する</button>
+        </div>`;
+    }
+
+    function modalSendRequest() {
+        const d = state.modalData;
+        
+        let unitLabel = '個';
+        if (d.itemId !== 'custom') {
+            const itemDef = getItemById(d.itemId);
+            if (itemDef) unitLabel = itemDef.unit;
+        }
+
+        let membersHtml = '';
+        if (currentUserGroup && currentUserGroup.members && currentUserGroup.members.length > 0) {
+            membersHtml = currentUserGroup.members.map(m => `
+            <label class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl p-2 btn-press-sm active:bg-gray-100 touch-manipulation">
+                <input type="checkbox" value="${m.id}" class="req-member-cb w-4 h-4 text-orange-500 rounded border-gray-300 focus:ring-orange-500" ${d.prefillMemberId===m.id?'checked':''}>
+                <span class="text-xs font-bold text-gray-700">${m.name}</span>
+            </label>`).join('');
+        }
+
+        return `
+        <div class="flex items-center justify-between mb-5">
+            <h2 class="text-lg font-bold text-gray-800">📩 リクエスト作成</h2>
+            <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 btn-press-sm">✕</button>
+        </div>
+        ${d.itemId === 'custom' ? `
+            <div class="mb-4">
+                <label class="text-[10px] font-bold text-gray-500 uppercase">リクエストする物資名</label>
+                <input type="text" id="req-custom-name" placeholder="例: アレルギー用粉ミルク" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white">
+            </div>
+        ` : `
+            <p class="text-sm font-bold text-orange-600 mb-4 bg-orange-50 p-3 rounded-xl border border-orange-100">${d.itemName}</p>
+        `}
+        <div class="space-y-4">
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">対象者 (誰のための物資か)</label>
+                    <button onclick="toggleAllRequestMembers()" class="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full btn-press-sm touch-manipulation border border-indigo-100">全選択 / 解除</button>
+                </div>
+                ${membersHtml ? `
+                <div class="grid grid-cols-2 gap-2" id="req-member-checkboxes">
+                    ${membersHtml}
+                </div>
+                ` : `<p class="text-xs text-gray-400">メンバーがいません</p>`}
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">必要数量 (${unitLabel})</label>
+                    <input type="number" id="req-quantity" value="1" min="1" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">希望期限</label>
+                    <select id="req-deadline" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white">
+                        <option value="7">1週間以内</option>
+                        <option value="14">2週間以内</option>
+                        <option value="30">1か月以内</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div>
+                <label class="text-[10px] font-bold text-gray-500 uppercase">自由記述欄（補足事項など）</label>
+                <textarea id="req-note" rows="2" placeholder="例: アレルギーの詳細、希望のサイズ、特定の理由など自由にお書きください" class="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:bg-white resize-none"></textarea>
+            </div>
+            
+            <button onclick="submitRequest()" class="w-full rounded-2xl bg-gradient-to-r from-orange-400 to-red-500 py-4 text-center font-bold text-white shadow-lg shadow-orange-500/30 btn-press mt-4">管理者へリクエストを送信</button>
+        </div>`;
+    }
+
+    function modalGuide() {
+        let title = "使い方ガイド";
+        let desc = "";
+        
+        if (state.currentScreen === 'shelterSelect') {
+            desc = "<strong>避難所の選択</strong><br>現在あなたが滞在している、またはこれから向かう避難所を一覧から選んでください。";
+        } else if (state.currentScreen === 'groupRegister') {
+            desc = "<strong>避難メンバーの登録</strong><br>あなたと一緒に避難している家族やグループのメンバーを追加します。<br>乳幼児のおむつや高齢者の常備薬など、一人ひとりに必要な配慮をチェックしてください。<br><br>全て入力したら、画面下部の「この内容で登録・入所する」ボタンを押して完了です。";
+        } else if (state.currentScreen === 'userMain') {
+            if (state.userTab === 'supplies') {
+                desc = "<strong>物資の一覧とリクエスト</strong><br>現在避難所にある物資の在庫状況と、残り日数の目安を確認できます。<br>リストにない物や不足している物があれば、右下の「📩」ボタン、または各物資の詳細から「リクエスト作成」を押して施設管理者に要望を送ることができます。<br>（「その他」カテゴリから独自の物資をリクエストすることも可能です）";
+            } else if (state.userTab === 'requests') {
+                desc = "<strong>リクエスト履歴</strong><br>あなたが送信したリクエストの履歴と対応状況が確認できます。<br>ステータスは「📤 未対応」「🔄 対応中」「✅ 対応済み」の順に変わり、管理者が対応を完了すると緑色で目立つようにお知らせされます。";
+            } else if (state.userTab === 'mypage') {
+                desc = "<strong>メンバー設定（マイページ）</strong><br>グループのメンバー構成や、アレルギー等の特記事項を後から編集できます。<br>体調の変化や必要なものが増えた場合は、ここで情報を更新し、忘れずに画面下部の「💾 変更を保存」を押してください。";
+            }
+        }
+
+        return `
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">❔ ${title}</h2>
+            <button onclick="closeModal()" class="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 btn-press-sm text-lg">✕</button>
+        </div>
+        <div class="bg-emerald-50 rounded-xl p-6 border border-emerald-100 text-[18px] text-emerald-900 leading-relaxed">
+            ${desc}
+        </div>
+        <button onclick="closeModal()" class="w-full rounded-2xl bg-emerald-600 py-4 text-center font-bold text-white shadow-md btn-press mt-6 text-lg">閉じる</button>
+        `;
+    }
+
+    function renderToast() {
+        return `
+        <div class="absolute bottom-10 left-1/2 z-[60] flex -translate-x-1/2 items-center whitespace-nowrap rounded-full ${state.toast.bg||'bg-gray-900'} px-6 py-3 text-sm font-bold text-white shadow-2xl fade-in">
+            ${state.toast.icon||'✅'} <span class="ml-2">${state.toast.text}</span>
+        </div>`;
+    }
+
+    // ═══════════════════════════════════════════
+    //  8. イベントハンドラ - ナビゲーション
+    // ═══════════════════════════════════════════
+    function navigateTo(screen) {
+        state.currentScreen = screen;
+        state.modal = null;
+        state.expandedItem = null;
+        state.expandedMember = null;
+        render();
+    }
+
+    function selectRole(role) {
+        state.currentRole = role;
+        if (role === 'admin') {
+            navigateTo('adminAuth');
+        } else {
+            navigateTo('shelterSelect');
+        }
+    }
+
+    function chooseShelter(id) {
+        state.selectedShelter = shelters.find(s => s.id === id);
+        state.currentCategory = 'food';
+        state.expandedItem = null;
+        if (state.currentRole === 'user') {
+            const groups = shelterGroups[id] || [];
+            const savedGroupId = localStorage.getItem('evac_myGroupId_' + id);
+            currentUserGroup = groups.find(g => g.id === savedGroupId) || null;
+            
+            if (!currentUserGroup) {
+                currentUserGroup = { id: uid(), members: [], registeredAt: null };
+            }
+            
+            navigateTo(currentUserGroup.registeredAt ? 'userMain' : 'groupRegister');
+        } else if (state.currentRole === 'viewer') {
+            currentUserGroup = { id: 'viewer', members: [], registeredAt: new Date() };
+            navigateTo('userMain');
+        } else {
+            navigateTo('adminShelterDetail');
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    //  9. イベントハンドラ - メンバー管理 (ユーザー側)
+    // ═══════════════════════════════════════════
+    function toggleMemberExpand(memberId) {
+        state.expandedMember = state.expandedMember === memberId ? null : memberId;
+        render();
+    }
+
+    function addMember(typeId) {
+        if (!currentUserGroup) currentUserGroup = { id: uid(), members: [], registeredAt: null };
+        
+        const typeInfo = memberTypes.find(t => t.id === typeId);
+        const count = currentUserGroup.members.filter(m => m.type === typeId).length;
+        const defaultName = `${typeInfo.name}${count + 1}`;
+
+        const newMember = {
+            id: 'm_' + uid(),
+            type: typeId,
+            name: defaultName,
+            needs: {},
+            requestItems: {},
+            specialNotes: ''
+        };
+
+        if (typeId === 'infant') {
+            newMember.needs.diaper = true;
+            newMember.needs.diaperOption = 'M';
+        }
+
+        currentUserGroup.members.push(newMember);
+        state.expandedMember = newMember.id;
+        render();
+    }
+
+    function removeMember(memberId) {
+        if (!confirm('このメンバーを削除してよろしいですか？')) return;
+        currentUserGroup.members = currentUserGroup.members.filter(m => m.id !== memberId);
+        if (state.expandedMember === memberId) state.expandedMember = null;
+        render();
+    }
+
+    function toggleDisableMember(memberId) {
+        const m = currentUserGroup.members.find(x => x.id === memberId);
+        if (m) {
+            m.disabled = !m.disabled;
+            if (state.expandedMember === memberId) state.expandedMember = null;
+            render();
+        }
+    }
+
+    function updateMemberName(memberId, name) {
+        const m = currentUserGroup.members.find(x => x.id === memberId);
+        if (m) m.name = name.trim() || memberTypes.find(t=>t.id===m.type).name;
+        render();
+    }
+
+    function updateMemberNotes(memberId, notes) {
+        const m = currentUserGroup.members.find(x => x.id === memberId);
+        if (m) m.specialNotes = notes;
+    }
+
+    function updateLotPreview() {
+        const servings = parseFloat(document.getElementById('lot-servings').value) || 0;
+        const qty = parseFloat(document.getElementById('lot-quantity').value) || 0;
+        const previewEl = document.getElementById('lot-total-val');
+        if (previewEl) previewEl.innerText = (servings * qty).toString();
+    }
+
+    function toggleMemberNeed(memberId, needId) {
+        const m = currentUserGroup.members.find(x => x.id === memberId);
+        if (m) {
+            m.needs[needId] = !m.needs[needId];
+            if (!m.needs[needId] && m.requestItems[needId]) {
+                delete m.requestItems[needId];
+            }
+            if (m.needs[needId]) {
+                const needDef = needsByType[m.type].find(n => n.id === needId);
+                if (needDef && needDef.options && !m.needs[needId+'Option']) {
+                    m.needs[needId+'Option'] = needDef.options[1] || needDef.options[0];
+                }
+            }
+            render();
+        }
+    }
+
+    function toggleAllRequestMembers() {
+        const cbs = document.querySelectorAll('.req-member-cb');
+        if (!cbs.length) return;
+        const allChecked = Array.from(cbs).every(cb => cb.checked);
+        cbs.forEach(cb => cb.checked = !allChecked);
+    }
+
+    function setMemberNeedOption(memberId, needId, optionValue) {
+        const m = currentUserGroup.members.find(x => x.id === memberId);
+        if (m) {
+            m.needs[needId+'Option'] = optionValue;
+            render();
+        }
+    }
+
+    function toggleMemberRequest(memberId, needId, itemId, itemName) {
+        const m = currentUserGroup.members.find(x => x.id === memberId);
+        if (!m) return;
+
+        if (m.requestItems[needId]) {
+            delete m.requestItems[needId];
+            render();
+        } else {
+            openRequestModal(itemId, itemName, memberId, needId);
+        }
+    }
+
+    function registerGroup() {
+        if (!currentUserGroup || !state.selectedShelter || currentUserGroup.members.length === 0) return;
+        const sid = state.selectedShelter.id;
+        currentUserGroup.registeredAt = new Date().toISOString();
+        if (!shelterGroups[sid]) shelterGroups[sid] = [];
+        const existing = shelterGroups[sid].findIndex(g => g.id === currentUserGroup.id);
+        if (existing >= 0) shelterGroups[sid][existing] = currentUserGroup;
+        else shelterGroups[sid].push(currentUserGroup);
+        localStorage.setItem('evac_myGroupId_' + sid, currentUserGroup.id);
+        saveData();
+        showToast('✅', '入所登録が完了しました', 'bg-emerald-600');
+        navigateTo('userMain');
+    }
+
+    function saveGroupEdits() {
+        if (!currentUserGroup || !state.selectedShelter) return;
+        const sid = state.selectedShelter.id;
+        if (!shelterGroups[sid]) shelterGroups[sid] = [];
+        const existing = shelterGroups[sid].findIndex(g => g.id === currentUserGroup.id);
+        if (existing >= 0) shelterGroups[sid][existing] = currentUserGroup;
+        else shelterGroups[sid].push(currentUserGroup);
+        saveData();
+        showToast('✅', 'メンバー情報を保存しました', 'bg-emerald-600');
+    }
+
+    // ═══════════════════════════════════════════
+    //  10. イベントハンドラ - その他UI
+    // ═══════════════════════════════════════════
+    function switchCategory(id) { state.currentCategory = id; state.expandedItem = null; render(); }
+    function toggleExpand(id) { state.expandedItem = state.expandedItem === id ? null : id; render(); }
+    function setUserTab(tab) { state.userTab = tab; state.expandedMember = null; render(); }
+
+    function closeModal() { 
+        state.modal = null; 
+        state.modalData = {}; 
+        render(); 
+    }
+    function closeModalBg(e) { if (e.target === e.currentTarget) closeModal(); }
+
+    function openAddLotModal(itemId, itemName, unit) {
+        state.modal = 'addLot';
+        state.modalData = { itemId, itemName, unit, servingsPerUnit:1, quantity:1, expirationDate:'', image:null };
+        render();
+    }
+    function openNewItemModal() {
+        state.modal = 'newItem';
+        state.modalData = {};
+        render();
+    }
+    function openRequestModal(itemId, itemName, prefillMemberId = null, sourceNeedId = null) {
+        state.modal = 'sendRequest';
+        state.modalData = { itemId, itemName, prefillMemberId, sourceNeedId };
+        render();
+    }
+
+    function handleLotImage(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            state.modalData.image = e.target.result;
+            render();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function submitAddLot() {
+        const sid = state.selectedShelter.id;
+        const d = state.modalData;
+        const servings = parseInt(document.getElementById('lot-servings').value) || 1;
+        const quantity = parseInt(document.getElementById('lot-quantity').value) || 1;
+        const expiry = document.getElementById('lot-expiry').value || null;
+        const img = d.image || null;
+
+        if (!supplyLots[sid]) supplyLots[sid] = {};
+        if (!supplyLots[sid][d.itemId]) supplyLots[sid][d.itemId] = [];
+        supplyLots[sid][d.itemId].push({
+            id: uid(), servingsPerUnit: servings, quantity: quantity,
+            expirationDate: expiry, image: img, addedAt: new Date().toISOString()
+        });
+        saveData();
+        closeModal();
+        showToast('📦', `${d.itemName}を追加しました`, 'bg-indigo-600');
+    }
+
+    function deleteLot(itemId, lotId) {
+        const sid = state.selectedShelter.id;
+        if (supplyLots[sid] && supplyLots[sid][itemId]) {
+            supplyLots[sid][itemId] = supplyLots[sid][itemId].filter(l => l.id !== lotId);
+            saveData();
+            showToast('🗑️', 'ロットを削除しました', 'bg-gray-700');
+        }
+    }
+
+    function submitNewItem() {
+        const name = document.getElementById('ni-name').value.trim();
+        const catId = document.getElementById('ni-category').value;
+        const emoji = document.getElementById('ni-emoji').value.trim() || '📦';
+        const unit = document.getElementById('ni-unit').value.trim();
+        const target = document.getElementById('ni-target').value;
+        const perDay = parseFloat(document.getElementById('ni-perday').value) || 0;
+        if (!name || !unit) { alert('物資名と単位を入力してください'); return; }
+        
+        let itemId = state.modalData.id || 'custom-' + uid();
+        
+        const existing = customItems.findIndex(c => c.id === itemId);
+        if (existing >= 0) {
+            customItems[existing] = { id: itemId, name, emoji, unit, categoryId: catId, target, perDay };
+        } else {
+            customItems.push({ id: itemId, name, emoji, unit, categoryId: catId, target, perDay });
+        }
+        
+        saveData();
+        closeModal();
+        state.currentCategory = catId;
+        showToast('🆕', `「${name}」を作成しました`, 'bg-indigo-600');
+    }
+
+    function submitRequest() {
+        const d = state.modalData;
+        
+        let itemName = d.itemName;
+        if (d.itemId === 'custom') {
+            const el = document.getElementById('req-custom-name');
+            if (el) itemName = el.value.trim();
+            if (!itemName) { alert('物資名を入力してください'); return; }
+        }
+        
+        const quantity = parseInt(document.getElementById('req-quantity').value) || 1;
+        
+        const deadlineDays = parseInt(document.getElementById('req-deadline').value) || 7;
+        const createdDate = new Date();
+        const targetDate = new Date(createdDate.getTime());
+        targetDate.setDate(targetDate.getDate() + deadlineDays);
+        const deadlineDateStr = targetDate.toISOString().split('T')[0];
+
+        const reqNote = document.getElementById('req-note') ? document.getElementById('req-note').value.trim() : '';
+
+        const cbs = Array.from(document.querySelectorAll('.req-member-cb'));
+        const checkedCbs = cbs.filter(cb => cb.checked);
+        const forMemberIds = checkedCbs.map(cb => cb.value);
+        let forMemberName = null;
+        
+        if (currentUserGroup && forMemberIds.length > 0) {
+            if (forMemberIds.length === currentUserGroup.members.length) {
+                // If all members are checked, consider it "entire group" to simplify UI
+                forMemberName = null;
+            } else {
+                const names = forMemberIds.map(id => {
+                    const m = currentUserGroup.members.find(x => x.id === id);
+                    return m ? m.name : '';
+                }).filter(n => n);
+                forMemberName = names.join(', ');
+            }
+        }
+
+        const reqId = uid();
+        requests.push({
+            id: reqId, shelterId: state.selectedShelter.id, itemId: d.itemId, itemName: itemName,
+            quantity, deadlineDays, deadlineDate: deadlineDateStr, status: 'pending', createdAt: createdDate.toISOString(),
+            groupId: currentUserGroup ? currentUserGroup.id : null,
+            forMemberId: forMemberIds.length > 0 ? forMemberIds[0] : null,
+            forMemberIds: forMemberIds,
+            forMemberName: forMemberName,
+            note: reqNote
+        });
+
+        if (forMemberIds && forMemberIds.length > 0 && d.sourceNeedId && currentUserGroup) {
+            forMemberIds.forEach(id => {
+                const m = currentUserGroup.members.find(x => x.id === id);
+                if (m) m.requestItems[d.sourceNeedId] = reqId;
+            });
+        }
+
+        saveData();
+        closeModal();
+        showToast('📩', 'リクエストを送信しました', 'bg-orange-500');
+    }
+
+    function updateRequestStatus(reqId, newStatus) {
+        const req = requests.find(r => r.id === reqId);
+        if (req) { req.status = newStatus; saveData(); render(); }
+    }
+
+    function changeCalendarMonth(diff) {
+        if (!state.calendarMonth) state.calendarMonth = new Date();
+        state.calendarMonth.setMonth(state.calendarMonth.getMonth() + diff);
+        state.calendarSelectedDate = null;
+        render();
+    }
+
+    function selectCalendarDate(dateStr) {
+        state.calendarSelectedDate = dateStr;
+        render();
+    }
+
+    function showToast(icon, text, bg) {
+        state.toast = { icon, text, bg };
+        render();
+        setTimeout(() => { state.toast = null; render(); }, 2000);
+    }
+
+    // ═══════════════════════════════════════════
+    //  11. 初期化
+    // ═══════════════════════════════════════════
+    function openMemberDetail(shelterId, groupId, memberId) {
+        const group = (shelterGroups[shelterId] || []).find(g => g.id === groupId);
+        if (!group) return;
+        const member = group.members.find(m => m.id === memberId);
+        if (!member) return;
+        
+        state.modal = 'memberDetail';
+        state.modalData = { member, group, shelterId };
+        render();
+    }
+
+    function modalMemberDetail() {
+        const { member: m } = state.modalData;
+        const typeInfo = memberTypes.find(t => t.id === m.type);
+        
+        const nList = needsByType[m.type] || [];
+        const activeNeeds = nList.filter(n => !!m.needs[n.id]);
+        
+        let needsHtml = '';
+        if (activeNeeds.length > 0) {
+            needsHtml = activeNeeds.map(n => {
+                const opt = m.needs[n.id+'Option'] ? ` <span class="text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full ml-1">${m.needs[n.id+'Option']}</span>` : '';
+                return `<div class="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-bold text-gray-700 flex items-center">${n.emoji} ${n.name}${opt}</div>`;
+            }).join('');
+        } else {
+            needsHtml = `<p class="text-xs text-gray-400">特記すべきニーズは登録されていません</p>`;
+        }
+        
+        let notesHtml = '';
+        if (m.specialNotes && m.specialNotes.trim()) {
+            notesHtml = `<div class="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-xs text-yellow-800 whitespace-pre-wrap">${m.specialNotes}</div>`;
+        } else {
+            notesHtml = `<p class="text-xs text-gray-400">メモはありません</p>`;
+        }
+        
+        return `
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800">👤 対象者の詳細</h2>
+            <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 btn-press-sm">✕</button>
+        </div>
+        
+        <div class="mb-5 flex items-center gap-4 border-b border-gray-100 pb-4">
+            <div class="w-14 h-14 bg-indigo-50 rounded-full flex items-center justify-center text-2xl">${typeInfo.emoji}</div>
+            <div>
+                <h3 class="text-xl font-black text-gray-800">${m.name}</h3>
+                <p class="text-xs font-bold text-indigo-600 mt-0.5">${typeInfo.name}</p>
+            </div>
+        </div>
+        
+        <div class="space-y-4">
+            <div>
+                <h4 class="text-[10px] font-bold text-gray-500 uppercase mb-2 border-l-4 border-emerald-400 pl-2">登録ニーズ・アレルギー等</h4>
+                <div class="flex flex-col gap-2">
+                    ${needsHtml}
+                </div>
+            </div>
+            
+            <div>
+                <h4 class="text-[10px] font-bold text-gray-500 uppercase mb-2 border-l-4 border-yellow-400 pl-2">特記事項・メモ</h4>
+                ${notesHtml}
+            </div>
+        </div>
+        `;
+    }
+
+    function openGroupDetail(shelterId, groupId, targetMemberIdsStr = null) {
+        const group = (shelterGroups[shelterId] || []).find(g => g.id === groupId);
+        if (!group) return;
+        
+        let targetMemberIds = targetMemberIdsStr ? targetMemberIdsStr.split(',') : null;
+        
+        state.modal = 'groupDetail';
+        state.modalData = { group, shelterId, targetMemberIds };
+        render();
+    }
+
+    function modalGroupDetail() {
+        const { group, targetMemberIds } = state.modalData;
+        
+        const filteredMembers = targetMemberIds ? group.members.filter(m => targetMemberIds.includes(m.id)) : group.members;
+        
+        let membersHtml = filteredMembers.map(m => {
+            const typeInfo = memberTypes.find(t => t.id === m.type);
+            const nList = needsByType[m.type] || [];
+            const activeNeeds = nList.filter(n => !!m.needs[n.id]);
+            
+            let needsHtml = activeNeeds.map(n => {
+                const opt = m.needs[n.id+'Option'] ? ` (${m.needs[n.id+'Option']})` : '';
+                return `<span class="inline-block bg-gray-100 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-full mr-1 mb-1">${n.emoji}${n.name}${opt}</span>`;
+            }).join('');
+            if(!needsHtml) needsHtml = `<span class="text-[9px] text-gray-400">特になし</span>`;
+            
+            let notes = (m.specialNotes||'').trim() ? `<p class="text-[9px] text-yellow-700 bg-yellow-50 p-1 rounded mt-1">📝 ${m.specialNotes}</p>` : '';
+            
+            return `
+            <div class="flex gap-3 items-start border-b border-gray-100 py-2 last:border-0">
+                <div class="text-xl bg-indigo-50 w-8 h-8 rounded-full flex items-center justify-center shrink-0">${typeInfo.emoji}</div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs font-bold text-gray-800">${m.name} <span class="text-[9px] text-indigo-500 font-normal">(${typeInfo.name})</span></p>
+                    <div class="mt-1">${needsHtml}</div>
+                    ${notes}
+                </div>
+            </div>`;
+        }).join('');
+        
+        return `
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800">${targetMemberIds ? '👥 対象者の詳細' : '👥 グループ詳細'}</h2>
+            <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 btn-press-sm">✕</button>
+        </div>
+        <div class="space-y-2 mb-4">
+            <p class="text-[10px] text-gray-500">このリクエストは${targetMemberIds ? `選択された ${filteredMembers.length} 名` : `グループ全体（${group.members.length}名）`}に向けて作成されました。</p>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-2 max-h-[50vh] overflow-y-auto">
+            ${membersHtml}
+        </div>
+        `;
+    }
+
+    loadData();
+    render();
+    </script>
+</body>
+</html>
