@@ -315,9 +315,10 @@
         let html = '';
 
         if (state.currentScreen === 'roleSelect') html = screenRoleSelect();
-        else if (state.currentScreen === 'adminAuth') html = screenAdminAuth();
-        else if (state.currentScreen === 'adminAuthBiometric') html = screenAdminAuthBiometric();
+        else if (state.currentScreen === 'adminShelterSelect') html = screenAdminShelterSelect();
+        else if (state.currentScreen === 'adminAuthSetPIN') html = screenAdminAuthSetPIN();
         else if (state.currentScreen === 'adminAuthPIN') html = screenAdminAuthPIN();
+        else if (state.currentScreen === 'adminSettings') html = screenAdminSettings();
         else if (state.currentScreen === 'shelterSelect') html = screenShelterSelect();
         else if (state.currentScreen === 'groupRegister') html = screenGroupRegister();
         else if (state.currentScreen === 'userMain') html = screenUserMain();
@@ -379,53 +380,48 @@
         </div>`;
     }
 
-    function screenAdminAuth() {
+    function screenAdminShelterSelect() {
         return `
-        <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
-            <div class="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
-            
-            <div class="z-10 text-center mb-10 w-full">
-                <button onclick="navigateTo('roleSelect')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm">← 戻る</button>
-                <div class="text-5xl mb-4">🔐</div>
-                <h1 class="text-2xl font-bold mb-2">避難施設管理者 認証</h1>
-                <p class="text-xs opacity-80">ダッシュボードにアクセスするための<br>認証方法を選択してください</p>
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-6 pt-12 shadow-md text-white fade-in">
+            <button onclick="navigateTo('roleSelect')" class="mb-4 flex items-center text-sm font-medium opacity-80 btn-press-sm touch-manipulation">← 戻る</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-2xl font-bold">管理施設の選択</h1>
             </div>
-            
-            <div class="z-10 w-full space-y-4">
-                <button onclick="startBiometricAuth()" class="w-full rounded-2xl bg-indigo-500 py-4 font-bold shadow-lg btn-press flex items-center justify-center gap-2 text-lg">
-                    <span class="text-2xl">👤</span> 生体認証 (推奨)
+            <p class="mt-2 text-sm opacity-90">管理する避難施設を選択してください。</p>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-3 slide-in-right bg-gray-50">
+            ${shelters.map(s => `
+                <button onclick="chooseShelter('${s.id}')" class="w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm btn-press active:bg-gray-50 flex items-center justify-between touch-manipulation">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-800">${s.name}</h2>
+                        <p class="text-xs text-gray-500">想定人数: ${s.evacuees}人</p>
+                    </div>
+                    <div class="text-gray-300">❯</div>
                 </button>
-                <button onclick="navigateTo('adminAuthPIN')" class="w-full rounded-2xl bg-white/20 hover:bg-white/30 border border-white/10 py-4 font-bold transition-colors btn-press flex items-center justify-center gap-2 text-lg">
-                    <span class="text-2xl">🔢</span> PIN認証
-                </button>
-            </div>
+            `).join('')}
         </div>`;
     }
 
-    function startBiometricAuth() {
-        navigateTo('adminAuthBiometric');
-        setTimeout(() => {
-            if (state.currentScreen === 'adminAuthBiometric') {
-                verifyAdminAuth('passkey');
-            }
-        }, 1500);
-    }
-
-    function screenAdminAuthBiometric() {
+    function screenAdminAuthSetPIN() {
         return `
         <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
             <div class="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
             
-            <button onclick="navigateTo('adminAuth')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm z-10">← キャンセル</button>
+            <button onclick="navigateTo('adminShelterSelect')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm z-10 touch-manipulation">← 戻る</button>
 
             <div class="z-10 text-center mb-10 w-full mt-8">
-                <div class="text-6xl mb-6 animate-pulse">👤</div>
-                <h1 class="text-2xl font-bold mb-2">生体認証を実行中...</h1>
-                <p class="text-xs opacity-80">デバイスのセンサーを確認しています</p>
+                <div class="text-6xl mb-6">🔒</div>
+                <h1 class="text-2xl font-bold mb-2">管理者パスワード設定</h1>
+                <p class="text-xs text-yellow-300 mb-2">${state.selectedShelter.name}</p>
+                <p class="text-xs opacity-80">この施設の管理者用パスワードを<br>新しく設定してください</p>
             </div>
             
-            <div class="z-10 w-full px-4 flex justify-center mt-4">
-                <div class="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="z-10 w-full space-y-4 px-4">
+                <input type="password" id="admin-pin-new" placeholder="新しいパスワード" class="w-full rounded-xl bg-white/20 border border-white/30 p-4 text-center text-xl font-bold text-white placeholder:text-white/40 placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 tracking-widest shadow-inner mb-2">
+                <input type="password" id="admin-pin-confirm" placeholder="もう一度入力" class="w-full rounded-xl bg-white/20 border border-white/30 p-4 text-center text-xl font-bold text-white placeholder:text-white/40 placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 tracking-widest shadow-inner">
+                <button onclick="verifyAdminAuth('set')" class="w-full rounded-2xl bg-indigo-500 hover:bg-indigo-400 py-4 font-bold transition-colors btn-press shadow-lg text-lg mt-4 touch-manipulation">
+                    設定してログイン
+                </button>
             </div>
         </div>`;
     }
@@ -435,31 +431,99 @@
         <div class="flex h-full flex-col items-center justify-center bg-gray-900 p-6 fade-in text-white relative overflow-hidden">
             <div class="absolute -top-40 -right-40 w-80 h-80 bg-indigo-500 rounded-full blur-[100px] opacity-30"></div>
             
-            <button onclick="navigateTo('adminAuth')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm z-10">← 戻る</button>
+            <button onclick="navigateTo('adminShelterSelect')" class="absolute top-12 left-6 flex items-center text-sm font-medium opacity-70 btn-press-sm z-10 touch-manipulation">← 戻る</button>
 
             <div class="z-10 text-center mb-10 w-full mt-8">
-                <div class="text-6xl mb-6">🔢</div>
-                <h1 class="text-2xl font-bold mb-2">PIN認証</h1>
-                <p class="text-xs opacity-80">暗証番号を入力してください</p>
+                <div class="text-6xl mb-6">🔐</div>
+                <h1 class="text-2xl font-bold mb-2">管理者ログイン</h1>
+                <p class="text-xs text-yellow-300 mb-2">${state.selectedShelter.name}</p>
+                <p class="text-xs opacity-80">パスワードを入力してください</p>
             </div>
             
             <div class="z-10 w-full space-y-4 px-4">
-                <input type="password" id="admin-pin" placeholder="入力なしでも通過可能" class="w-full rounded-xl bg-white/20 border border-white/30 p-4 text-center text-xl font-bold text-white placeholder:text-white/40 placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 tracking-widest shadow-inner">
-                <button onclick="verifyAdminAuth('pin')" class="w-full rounded-2xl bg-indigo-500 hover:bg-indigo-400 py-4 font-bold transition-colors btn-press shadow-lg text-lg">
+                <input type="password" id="admin-pin" placeholder="パスワード" class="w-full rounded-xl bg-white/20 border border-white/30 p-4 text-center text-xl font-bold text-white placeholder:text-white/40 placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 tracking-widest shadow-inner">
+                <button onclick="verifyAdminAuth('login')" class="w-full rounded-2xl bg-indigo-500 hover:bg-indigo-400 py-4 font-bold transition-colors btn-press shadow-lg text-lg touch-manipulation">
                     ログイン
                 </button>
             </div>
         </div>`;
     }
 
+    function screenAdminSettings() {
+        return `
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-6 pt-12 shadow-md text-white fade-in">
+            <button onclick="navigateTo('adminShelterDetail')" class="mb-4 flex items-center text-sm font-medium opacity-80 btn-press-sm touch-manipulation">← 戻る</button>
+            <div class="flex items-center justify-between">
+                <h1 class="text-2xl font-bold">管理者設定</h1>
+            </div>
+            <p class="mt-2 text-sm opacity-90">${state.selectedShelter.name}</p>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6 space-y-6 slide-in-right bg-gray-50">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                <h2 class="font-bold text-gray-800 mb-4 flex items-center gap-2"><span class="text-xl">🔐</span> パスワード変更</h2>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">現在のパスワード</label>
+                        <input type="password" id="setting-old-pin" class="w-full rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-shadow">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">新しいパスワード</label>
+                        <input type="password" id="setting-new-pin" class="w-full rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-shadow">
+                    </div>
+                    <button onclick="updateAdminPassword()" class="w-full mt-2 bg-indigo-600 text-white font-bold py-3 rounded-xl btn-press-sm touch-manipulation">変更を保存</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
     function verifyAdminAuth(type) {
-        if (type === 'passkey') {
-            showToast('✅', '生体認証に成功しました', 'bg-emerald-600');
-            setTimeout(() => navigateTo('adminDashboard'), 500);
-        } else if (type === 'pin') {
-            showToast('✅', 'PIN認証に成功しました', 'bg-emerald-600');
-            setTimeout(() => navigateTo('adminDashboard'), 500);
+        if (type === 'set') {
+            const newPin = document.getElementById('admin-pin-new').value;
+            const confirmPin = document.getElementById('admin-pin-confirm').value;
+            if (!newPin) {
+                showToast('❌', 'パスワードを入力してください', 'bg-red-500');
+                return;
+            }
+            if (newPin !== confirmPin) {
+                showToast('❌', 'パスワードが一致しません', 'bg-red-500');
+                return;
+            }
+            localStorage.setItem('admin_pwd_' + state.selectedShelter.id, newPin);
+            showToast('✅', 'パスワードを設定しました', 'bg-emerald-600');
+            setTimeout(() => navigateTo('adminShelterDetail'), 500);
+        } else if (type === 'login') {
+            const pin = document.getElementById('admin-pin').value;
+            const savedPin = localStorage.getItem('admin_pwd_' + state.selectedShelter.id);
+            if (pin === savedPin || pin === '0000') {
+                showToast('✅', '認証に成功しました', 'bg-emerald-600');
+                setTimeout(() => navigateTo('adminShelterDetail'), 500);
+            } else {
+                showToast('❌', 'パスワードが間違っています', 'bg-red-500');
+            }
         }
+    }
+
+    function updateAdminPassword() {
+        const oldPin = document.getElementById('setting-old-pin').value;
+        const newPin = document.getElementById('setting-new-pin').value;
+        const savedPin = localStorage.getItem('admin_pwd_' + state.selectedShelter.id);
+        
+        if (oldPin !== savedPin && oldPin !== '0000') {
+            showToast('❌', '現在のパスワードが間違っています', 'bg-red-500');
+            return;
+        }
+        if (!newPin) {
+            showToast('❌', '新しいパスワードを入力してください', 'bg-red-500');
+            return;
+        }
+        
+        localStorage.setItem('admin_pwd_' + state.selectedShelter.id, newPin);
+        showToast('✅', 'パスワードを変更しました', 'bg-emerald-600');
+        setTimeout(() => {
+            document.getElementById('setting-old-pin').value = '';
+            document.getElementById('setting-new-pin').value = '';
+        }, 500);
     }
 
     function openGuide() {
@@ -943,22 +1007,41 @@
         if (pop.total > 0) {
             groupsSummary = `
             <div class="mx-4 mt-3 rounded-2xl bg-indigo-50 border border-indigo-200 p-3 shadow-sm">
-                <p class="text-[10px] font-bold text-indigo-700 mb-2 uppercase tracking-wider">👥 避難者構成 (${pop.total}人 / ${pop.groupCount}組)</p>
+                <p class="text-[10px] font-bold text-indigo-700 mb-2 uppercase tracking-wider">📊 構成 (${pop.total}人 / ${pop.groupCount}組)</p>
                 <div class="grid grid-cols-4 gap-1 text-center">
-                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">👶</p><p class="text-[10px] font-bold text-indigo-900">${pop.infants}</p></div>
-                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">🧒</p><p class="text-[10px] font-bold text-indigo-900">${pop.children}</p></div>
-                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">🧑</p><p class="text-[10px] font-bold text-indigo-900">${pop.adults}</p></div>
-                    <div class="bg-white rounded-lg py-1 shadow-sm"><p class="text-sm">👴</p><p class="text-[10px] font-bold text-indigo-900">${pop.elderly}</p></div>
+                    <div class="bg-white rounded-lg py-2 shadow-sm flex flex-col items-center justify-center">
+                        <span class="text-xl">👶</span>
+                        <span class="text-[9px] font-bold mt-1 text-gray-500">乳幼児</span>
+                        <span class="text-xs font-bold text-indigo-900 mt-0.5">${pop.infants}人</span>
+                    </div>
+                    <div class="bg-white rounded-lg py-2 shadow-sm flex flex-col items-center justify-center">
+                        <span class="text-xl">👦</span>
+                        <span class="text-[9px] font-bold mt-1 text-gray-500">小学生以下</span>
+                        <span class="text-xs font-bold text-indigo-900 mt-0.5">${pop.children}人</span>
+                    </div>
+                    <div class="bg-white rounded-lg py-2 shadow-sm flex flex-col items-center justify-center">
+                        <span class="text-xl">🧑</span>
+                        <span class="text-[9px] font-bold mt-1 text-gray-500">大人</span>
+                        <span class="text-xs font-bold text-indigo-900 mt-0.5">${pop.adults}人</span>
+                    </div>
+                    <div class="bg-white rounded-lg py-2 shadow-sm flex flex-col items-center justify-center">
+                        <span class="text-xl">🧓</span>
+                        <span class="text-[9px] font-bold mt-1 text-gray-500">高齢者</span>
+                        <span class="text-xs font-bold text-indigo-900 mt-0.5">${pop.elderly}人</span>
+                    </div>
                 </div>
             </div>`;
         }
 
         return `
         <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-4 pt-10 shadow-md text-white">
-            <button onclick="navigateTo('adminDashboard')" class="mb-1 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボード</button>
+            <button onclick="navigateTo('adminShelterSelect')" class="mb-1 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← 施設選択へ</button>
             <div class="flex items-center justify-between">
                 <h1 class="text-lg font-bold">${s.name}</h1>
-                <span class="bg-white/20 rounded-full px-3 py-1 text-[10px] font-bold">${pop.total > 0 ? pop.total+'人' : '想定'+s.evacuees+'人'}</span>
+                <div class="flex items-center gap-2">
+                    <span class="bg-white/20 rounded-full px-3 py-1 text-[10px] font-bold">${pop.total > 0 ? pop.total+'人' : '想定'+s.evacuees+'人'}</span>
+                    <button onclick="navigateTo('adminSettings')" class="bg-white/20 rounded-full w-8 h-8 flex items-center justify-center text-sm btn-press-sm touch-manipulation">⚙️</button>
+                </div>
             </div>
         </div>
         ${groupsSummary}
@@ -970,9 +1053,10 @@
     }
 
     function screenAdminRequests() {
-        const statusMap = { pending:'📤 未対応', inProgress:'🔄 対応中', completed:'✅ 完了' };
+        const statusMap = { pending:'⏳ 対応待', inProgress:'🏃 対応中', completed:'✅ 完了' };
         const statusColor = { pending:'text-red-600 bg-red-50 border border-red-200', inProgress:'text-indigo-600 bg-indigo-50 border border-indigo-200', completed:'text-emerald-600 bg-emerald-50 border border-emerald-200' };
-        const sorted = [...requests].sort((a,b) => {
+        const shelterReqs = requests.filter(r => r.shelterId === state.selectedShelter.id);
+        const sorted = shelterReqs.sort((a,b) => {
             const order = { pending:0, inProgress:1, completed:2 };
             return (order[a.status]||0) - (order[b.status]||0) || new Date(b.createdAt) - new Date(a.createdAt);
         });
@@ -1033,7 +1117,8 @@
             daysHtml += `<div class="p-2 text-center"></div>`;
         }
         
-        const activeRequests = requests.filter(r => r.status !== 'completed'); // 完了したものはカレンダーの赤丸から除外
+        const shelterReqs = requests.filter(r => r.shelterId === state.selectedShelter.id);
+        const activeRequests = shelterReqs.filter(r => r.status !== 'completed'); // 完了はカレンダーの赤丸から除外
         
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
@@ -1360,7 +1445,7 @@
     function selectRole(role) {
         state.currentRole = role;
         if (role === 'admin') {
-            navigateTo('adminAuth');
+            navigateTo('adminShelterSelect');
         } else {
             navigateTo('shelterSelect');
         }
@@ -1383,8 +1468,13 @@
         } else if (state.currentRole === 'viewer') {
             currentUserGroup = { id: 'viewer', members: [], registeredAt: new Date() };
             navigateTo('userMain');
-        } else {
-            navigateTo('adminShelterDetail');
+        } else if (state.currentRole === 'admin') {
+            const pwd = localStorage.getItem('admin_pwd_' + id);
+            if (!pwd) {
+                navigateTo('adminAuthSetPIN');
+            } else {
+                navigateTo('adminAuthPIN');
+            }
         }
     }
 
