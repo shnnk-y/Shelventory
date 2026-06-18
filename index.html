@@ -491,13 +491,13 @@
             }
             localStorage.setItem('admin_pwd_' + state.selectedShelter.id, newPin);
             showToast('✅', 'パスワードを設定しました', 'bg-emerald-600');
-            setTimeout(() => navigateTo('adminShelterDetail'), 500);
+            setTimeout(() => navigateTo('adminDashboard'), 500);
         } else if (type === 'login') {
             const pin = document.getElementById('admin-pin').value;
             const savedPin = localStorage.getItem('admin_pwd_' + state.selectedShelter.id);
             if (pin === savedPin || pin === '0000') {
                 showToast('✅', '認証に成功しました', 'bg-emerald-600');
-                setTimeout(() => navigateTo('adminShelterDetail'), 500);
+                setTimeout(() => navigateTo('adminDashboard'), 500);
             } else {
                 showToast('❌', 'パスワードが間違っています', 'bg-red-500');
             }
@@ -879,50 +879,70 @@
     }
 
     function screenAdminDashboard() {
-        const totalReqs = pendingRequestCount();
-        let cards = shelters.map(s => {
-            const pop = getShelterPopulation(s.id);
-            const reqCnt = pendingRequestCount(s.id);
-            const waterDays = calcRemainingDays(s.id, 'water');
-            const foodDays = calcRemainingDays(s.id, 'alpha-rice');
-            const minDays = Math.min(waterDays || 999, foodDays || 999);
-            const statusEmoji = minDays <= 3 ? '🔴' : minDays <= 7 ? '🟡' : '🟢';
-
-            return `
-            <button onclick="chooseShelter('${s.id}')" class="w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm btn-press mb-3 touch-manipulation">
-                <div class="flex items-center justify-between mb-2">
-                    <h3 class="font-bold text-gray-800">${statusEmoji} ${s.name}</h3>
-                    ${reqCnt > 0 ? `<span class="bg-red-500 text-white text-[10px] font-bold rounded-full px-2 py-0.5 badge-pulse">${reqCnt}件</span>` : ''}
-                </div>
-                <div class="flex gap-4 text-xs text-gray-500">
-                    <span>想定 ${s.evacuees}人</span>
-                    <span class="font-bold ${pop.total>0?'text-indigo-600':'text-gray-400'}">登録 ${pop.total}人 (${pop.groupCount}組)</span>
-                </div>
-                <div class="mt-2 flex gap-2 text-[10px]">
-                    <span class="px-2 py-0.5 rounded-full ${daysLabel(waterDays).bg} ${daysLabel(waterDays).color}">💧水 ${daysLabel(waterDays).text}</span>
-                    <span class="px-2 py-0.5 rounded-full ${daysLabel(foodDays).bg} ${daysLabel(foodDays).color}">🍚食料 ${daysLabel(foodDays).text}</span>
-                </div>
-            </button>`;
-        }).join('');
+        const s = state.selectedShelter;
+        const pop = getShelterPopulation(s.id);
+        const reqCnt = pendingRequestCount(s.id);
+        const waterDays = calcRemainingDays(s.id, 'water');
+        const foodDays = calcRemainingDays(s.id, 'alpha-rice');
+        const minDays = Math.min(waterDays || 999, foodDays || 999);
+        const statusEmoji = minDays <= 3 ? '🔴' : minDays <= 7 ? '🟡' : '🟢';
 
         return `
-        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-5 pt-12 shadow-md text-white fade-in">
-            <button onclick="navigateTo('roleSelect')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← 戻る</button>
-            <div class="flex items-center justify-between">
-                <h1 class="text-xl font-bold">管理者ダッシュボード</h1>
+        <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-6 pt-12 shadow-md text-white fade-in relative">
+            <button onclick="navigateTo('adminShelterSelect')" class="absolute top-12 left-6 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation z-20">← 施設選択へ戻る</button>
+            <div class="text-center mt-6">
+                <p class="text-xs opacity-80 mb-1">管理者ダッシュボード</p>
+                <h1 class="text-2xl font-bold">${s.name}</h1>
             </div>
-            <p class="mt-1 text-[10px] opacity-70">📍 全${shelters.length}施設の状況</p>
-            <div class="flex items-center justify-between mt-4">
-                <button onclick="navigateTo('adminCalendar')" class="flex-1 mr-2 relative bg-white/20 rounded-xl px-3 py-2 text-sm font-bold btn-press text-center flex items-center justify-center gap-2 border border-indigo-400 touch-manipulation">
-                    📅 カレンダー
-                </button>
-                <button onclick="navigateTo('adminRequests')" class="flex-1 ml-2 relative bg-white/20 rounded-xl px-3 py-2 text-sm font-bold btn-press text-center flex items-center justify-center gap-2 border border-indigo-400 touch-manipulation">
-                    📩 リクエスト
-                    ${totalReqs > 0 ? `<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center badge-pulse">${totalReqs}</span>` : ''}
-                </button>
+            
+            <div class="mt-6 bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/20">
+                <div class="flex items-center justify-between mb-3 border-b border-white/20 pb-3">
+                    <div class="text-center w-1/3">
+                        <p class="text-[10px] opacity-70">総合状況</p>
+                        <p class="text-xl mt-1">${statusEmoji}</p>
+                    </div>
+                    <div class="text-center w-1/3 border-l border-r border-white/20">
+                        <p class="text-[10px] opacity-70">登録避難者</p>
+                        <p class="text-lg font-bold mt-1">${pop.total}<span class="text-xs font-normal opacity-70">人</span></p>
+                    </div>
+                    <div class="text-center w-1/3">
+                        <p class="text-[10px] opacity-70">未対応要望</p>
+                        <p class="text-lg font-bold mt-1 ${reqCnt>0?'text-red-300':''}">${reqCnt}<span class="text-xs font-normal opacity-70">件</span></p>
+                    </div>
+                </div>
+                <div class="flex justify-around text-xs">
+                    <div>💧 水: <span class="font-bold">${daysLabel(waterDays).text}</span></div>
+                    <div>🍚 食料: <span class="font-bold">${daysLabel(foodDays).text}</span></div>
+                </div>
             </div>
         </div>
-        <div class="flex-1 overflow-y-auto p-4 pb-[50vh] fade-in bg-gray-50">${cards}</div>`;
+        
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 fade-in bg-gray-50">
+            <h2 class="text-sm font-bold text-gray-500 ml-2 mb-2">管理メニュー</h2>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="navigateTo('adminShelterDetail')" class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 btn-press touch-manipulation">
+                    <div class="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-2xl">📦</div>
+                    <span class="text-sm font-bold text-gray-700">在庫管理</span>
+                </button>
+                
+                <button onclick="navigateTo('adminRequests')" class="relative bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 btn-press touch-manipulation">
+                    ${reqCnt > 0 ? `<div class="absolute top-3 right-3 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center badge-pulse">${reqCnt}</div>` : ''}
+                    <div class="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center text-2xl">📩</div>
+                    <span class="text-sm font-bold text-gray-700">リクエスト</span>
+                </button>
+                
+                <button onclick="navigateTo('adminCalendar')" class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 btn-press touch-manipulation">
+                    <div class="w-12 h-12 bg-teal-50 rounded-full flex items-center justify-center text-2xl">📅</div>
+                    <span class="text-sm font-bold text-gray-700">カレンダー</span>
+                </button>
+                
+                <button onclick="navigateTo('adminSettings')" class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 btn-press touch-manipulation">
+                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-2xl">⚙️</div>
+                    <span class="text-sm font-bold text-gray-700">設定</span>
+                </button>
+            </div>
+        </div>`;
     }
 
     function screenAdminShelterDetail() {
@@ -1035,7 +1055,7 @@
 
         return `
         <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-4 pt-10 shadow-md text-white">
-            <button onclick="navigateTo('adminShelterSelect')" class="mb-1 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← 施設選択へ</button>
+            <button onclick="navigateTo('adminDashboard')" class="mb-1 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボードへ</button>
             <div class="flex items-center justify-between">
                 <h1 class="text-lg font-bold">${s.name}</h1>
                 <div class="flex items-center gap-2">
@@ -1093,7 +1113,7 @@
 
         return `
         <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-5 pt-10 shadow-md text-white fade-in">
-            <button onclick="navigateTo('adminDashboard')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボード</button>
+            <button onclick="navigateTo('adminDashboard')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボードへ</button>
             <h1 class="text-xl font-bold">📩 リクエスト一覧</h1>
             <p class="text-[10px] opacity-70 mt-1">全避難所からのリクエスト ${requests.length}件（未対応: ${pendingRequestCount()}件）</p>
         </div>
@@ -1183,7 +1203,7 @@
         
         return `
         <div class="z-10 rounded-b-3xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pb-5 pt-10 shadow-md text-white fade-in">
-            <button onclick="navigateTo('adminDashboard')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボード</button>
+            <button onclick="navigateTo('adminDashboard')" class="mb-2 flex items-center text-xs font-medium opacity-70 btn-press-sm touch-manipulation">← ダッシュボードへ</button>
             <div class="flex items-center justify-between">
                 <h1 class="text-xl font-bold">📅 カレンダー</h1>
                 <div class="flex gap-2">
