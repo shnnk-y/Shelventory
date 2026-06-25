@@ -36,8 +36,14 @@
     <div id="app" class="relative mx-auto flex h-full w-full max-w-md flex-col bg-gray-50 shadow-2xl overflow-hidden">
         <!-- 画面がここに描画されます -->
     </div>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
+        const SUPABASE_URL = "https://dirfupchgwvywvftaizk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_8BMWQSjEy9M2NWaDjz1GaA_y4bqPjzw";
+
+const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.co","sb_publishable_8BMWQSjEy9M2NWaDjz1GaA_y4bqPjzw");
+    
+
     // ═══════════════════════════════════════════
     //  1. データモデル & 定数
     // ═══════════════════════════════════════════
@@ -286,8 +292,11 @@
     }
 
     function pendingRequestCount(shelterId = null) {
-        return requests.filter(r => r.status === 'pending' && (!shelterId || r.shelterId === shelterId)).length;
-    }
+    return requests.filter(r =>
+        (r.status === 'pending' || r.status === 'approved') &&
+        (!shelterId || r.shelterId === shelterId)
+    ).length;
+}
 
     function expirationStatus(dateStr) {
         if (!dateStr) return { expired: false, days: 999, label: '期限なし', cls: 'text-gray-400' };
@@ -477,25 +486,72 @@
         </div>`;
     }
 
-    function verifyAdminAuth(type) {
+    async function hashPassword(password) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
+        return Array.from(new Uint8Array(hashBuffer))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+    }
+
+    async function verifyAdminAuth(type) {
         if (type === 'set') {
             const newPin = document.getElementById('admin-pin-new').value;
             const confirmPin = document.getElementById('admin-pin-confirm').value;
+
             if (!newPin) {
                 showToast('❌', 'パスワードを入力してください', 'bg-red-500');
                 return;
             }
+
             if (newPin !== confirmPin) {
                 showToast('❌', 'パスワードが一致しません', 'bg-red-500');
                 return;
             }
-            localStorage.setItem('admin_pwd_' + state.selectedShelter.id, newPin);
+
+            const passwordHash = await hashPassword(newPin);
+
+            const { error } = await db
+                .from("shelter_admins")
+                .upsert({
+                    shelter_id: state.selectedShelter.id,
+                    password_hash: passwordHash
+                });
+
+            if (error) {
+                console.error("管理者パスワード設定エラー:", error);
+                showToast('❌', 'パスワード設定に失敗しました', 'bg-red-500');
+                return;
+            }
+
             showToast('✅', 'パスワードを設定しました', 'bg-emerald-600');
             setTimeout(() => navigateTo('adminDashboard'), 500);
+
         } else if (type === 'login') {
             const pin = document.getElementById('admin-pin').value;
-            const savedPin = localStorage.getItem('admin_pwd_' + state.selectedShelter.id);
-            if (pin === savedPin || pin === '0000') {
+
+            const { data, error } = await db
+                .from("shelter_admins")
+                .select("password_hash")
+                .eq("shelter_id", state.selectedShelter.id)
+                .maybeSingle();
+
+            if (error) {
+                console.error("管理者ログインエラー:", error);
+                showToast('❌', 'ログイン確認に失敗しました', 'bg-red-500');
+                return;
+            }
+
+            if (!data) {
+                showToast('❌', 'パスワードがまだ設定されていません', 'bg-red-500');
+                return;
+            }
+
+            const inputHash = await hashPassword(pin);
+
+            if (inputHash === data.password_hash) {
                 showToast('✅', '認証に成功しました', 'bg-emerald-600');
                 setTimeout(() => navigateTo('adminDashboard'), 500);
             } else {
@@ -504,26 +560,63 @@
         }
     }
 
-    function updateAdminPassword() {
+    async function updateAdminPassword() {
         const oldPin = document.getElementById('setting-old-pin').value;
         const newPin = document.getElementById('setting-new-pin').value;
-        const savedPin = localStorage.getItem('admin_pwd_' + state.selectedShelter.id);
-        
-        if (oldPin !== savedPin && oldPin !== '0000') {
-            showToast('❌', '現在のパスワードが間違っています', 'bg-red-500');
+
+        if (!oldPin) {
+            showToast('❌', '現在のパスワードを入力してください', 'bg-red-500');
             return;
         }
+
         if (!newPin) {
             showToast('❌', '新しいパスワードを入力してください', 'bg-red-500');
             return;
         }
-        
-        localStorage.setItem('admin_pwd_' + state.selectedShelter.id, newPin);
+
+        const { data, error } = await db
+            .from("shelter_admins")
+            .select("password_hash")
+            .eq("shelter_id", state.selectedShelter.id)
+            .maybeSingle();
+
+        if (error) {
+            console.error("現在のパスワード確認エラー:", error);
+            showToast('❌', '現在のパスワード確認に失敗しました', 'bg-red-500');
+            return;
+        }
+
+        if (!data) {
+            showToast('❌', '管理者パスワードが未設定です', 'bg-red-500');
+            return;
+        }
+
+        const oldHash = await hashPassword(oldPin);
+
+        if (oldHash !== data.password_hash && oldPin !== data.password_hash) {
+            showToast('❌', '現在のパスワードが間違っています', 'bg-red-500');
+            return;
+        }
+
+        const newHash = await hashPassword(newPin);
+
+        const { error: updateError } = await db
+            .from("shelter_admins")
+            .update({
+                password_hash: newHash
+            })
+            .eq("shelter_id", state.selectedShelter.id);
+
+        if (updateError) {
+            console.error("パスワード変更エラー:", updateError);
+            showToast('❌', 'パスワード変更に失敗しました', 'bg-red-500');
+            return;
+        }
+
         showToast('✅', 'パスワードを変更しました', 'bg-emerald-600');
-        setTimeout(() => {
-            document.getElementById('setting-old-pin').value = '';
-            document.getElementById('setting-new-pin').value = '';
-        }, 500);
+
+        document.getElementById('setting-old-pin').value = '';
+        document.getElementById('setting-new-pin').value = '';
     }
 
     function openGuide() {
@@ -794,10 +887,21 @@
             const sortedReqs = [...myReqs].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 
             let reqHtml = sortedReqs.length > 0 ? sortedReqs.map(r => {
-                const statusMap = { pending:'📤 処理待ち', inProgress:'🔄 対応中', completed:'✅ 対応済み' };
-                const statusColor = r.status === 'completed' ? 'text-emerald-700 bg-emerald-100 border border-emerald-300' : 
-                                   (r.status === 'inProgress' ? 'text-indigo-600 bg-indigo-50 border border-indigo-200' : 'text-orange-600 bg-orange-50 border border-orange-200');
+                const statusMap = {
+    pending: '📤 対応待ち',
+    approved: '🔄 対応中',
+    done: '✅ 対応済み',
+    cancelled: '🚫 キャンセル'
+};
 
+const statusColorMap = {
+    pending: 'text-orange-600 bg-orange-50 border border-orange-200',
+    approved: 'text-indigo-600 bg-indigo-50 border border-indigo-200',
+    done: 'text-emerald-700 bg-emerald-100 border border-emerald-300',
+    cancelled: 'text-gray-500 bg-gray-100 border border-gray-200'
+};
+
+const statusColor = statusColorMap[r.status] || 'text-gray-500 bg-gray-100 border border-gray-200';
                 return `
                 <div class="relative rounded-2xl border border-gray-200 bg-white shadow-sm p-4 fade-in overflow-hidden mb-3">
                     <div class="flex items-center justify-between mb-3 relative z-10">
@@ -1072,14 +1176,26 @@
         </div>`;
     }
 
-    function screenAdminRequests() {
-        const statusMap = { pending:'⏳ 対応待', inProgress:'🏃 対応中', completed:'✅ 完了' };
-        const statusColor = { pending:'text-red-600 bg-red-50 border border-red-200', inProgress:'text-indigo-600 bg-indigo-50 border border-indigo-200', completed:'text-emerald-600 bg-emerald-50 border border-emerald-200' };
-        const shelterReqs = requests.filter(r => r.shelterId === state.selectedShelter.id);
-        const sorted = shelterReqs.sort((a,b) => {
-            const order = { pending:0, inProgress:1, completed:2 };
-            return (order[a.status]||0) - (order[b.status]||0) || new Date(b.createdAt) - new Date(a.createdAt);
-        });
+        function screenAdminRequests() {
+    const statusMap = {
+        pending: '⏳ 対応待',
+        approved: '🏃 対応中',
+        done: '✅ 対応済み',
+        cancelled: '🚫 キャンセル'
+    };
+
+    const statusColor = {
+        pending: 'text-red-600 bg-red-50 border border-red-200',
+        approved: 'text-indigo-600 bg-indigo-50 border border-indigo-200',
+        done: 'text-emerald-600 bg-emerald-50 border border-emerald-200',
+        cancelled: 'text-gray-500 bg-gray-100 border border-gray-200'
+    };
+
+    const shelterReqs = requests.filter(r => r.shelterId === state.selectedShelter.id);
+    const sorted = shelterReqs.sort((a,b) => {
+        const order = { pending: 0, approved: 1, done: 2, cancelled: 3 };
+        return (order[a.status] ?? 0) - (order[b.status] ?? 0) || new Date(b.createdAt) - new Date(a.createdAt);
+    });
 
         let reqHtml = sorted.length > 0 ? sorted.map(r => {
             const shelter = shelters.find(s => s.id === r.shelterId);
@@ -1104,8 +1220,9 @@
                 <div class="flex items-center justify-between border-t border-gray-100 pt-2 mt-1">
                     <p class="text-[9px] text-gray-400">作成: ${new Date(r.createdAt).toLocaleString('ja-JP')}</p>
                     <div class="flex gap-2">
-                        ${r.status==='pending' ? `<button onclick="updateRequestStatus('${r.id}','inProgress')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm border border-indigo-200 touch-manipulation">対応中にする</button>` : ''}
-                        ${r.status==='inProgress' ? `<button onclick="updateRequestStatus('${r.id}','completed')" class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full btn-press-sm border border-emerald-200 touch-manipulation">完了にする</button>` : ''}
+                        ${r.status==='pending' ? `<button onclick="updateRequestStatus('${r.id}','approved')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm border border-indigo-200 touch-manipulation">対応中にする</button>` : ''}
+${r.status==='approved' ? `<button onclick="updateRequestStatus('${r.id}','done')" class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full btn-press-sm border border-emerald-200 touch-manipulation">対応済みにする</button>` : ''}
+${(r.status==='pending' || r.status==='approved') ? `<button onclick="updateRequestStatus('${r.id}','cancelled')" class="text-[9px] font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full btn-press-sm border border-gray-200 touch-manipulation">キャンセル</button>` : ''}
                     </div>
                 </div>
             </div>`;
@@ -1138,7 +1255,7 @@
         }
         
         const shelterReqs = requests.filter(r => r.shelterId === state.selectedShelter.id);
-        const activeRequests = shelterReqs.filter(r => r.status !== 'completed'); // 完了はカレンダーの赤丸から除外
+        const activeRequests = shelterReqs.filter(r => r.status === 'pending' || r.status === 'approved');
         
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
@@ -1164,8 +1281,19 @@
         if (state.calendarSelectedDate) {
             const dayReqs = requests.filter(r => r.deadlineDate === state.calendarSelectedDate);
             if (dayReqs.length > 0) {
-                const statusMap = { pending:'📤 未対応', inProgress:'🔄 対応中', completed:'✅ 完了' };
-                const statusColor = { pending:'text-red-600 bg-red-50 border-red-200', inProgress:'text-indigo-600 bg-indigo-50 border-indigo-200', completed:'text-emerald-600 bg-emerald-50 border-emerald-200' };
+                const statusMap = {
+    pending: '📤 対応待ち',
+    approved: '🔄 対応中',
+    done: '✅ 対応済み',
+    cancelled: '🚫 キャンセル'
+};
+
+const statusColor = {
+    pending: 'text-red-600 bg-red-50 border-red-200',
+    approved: 'text-indigo-600 bg-indigo-50 border-indigo-200',
+    done: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+    cancelled: 'text-gray-500 bg-gray-100 border-gray-200'
+};
                 
                 reqHtml = dayReqs.map(r => {
                     const shelter = shelters.find(sh => sh.id === r.shelterId);
@@ -1188,8 +1316,8 @@
                         <div class="flex items-center justify-between border-t border-gray-100 pt-2 mt-1">
                             <p class="text-[9px] text-gray-400">作成: ${new Date(r.createdAt).toLocaleDateString('ja-JP')}</p>
                             <div class="flex gap-2">
-                                ${r.status==='pending' ? `<button onclick="updateRequestStatus('${r.id}','inProgress')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm border border-indigo-200 touch-manipulation">対応中</button>` : ''}
-                                ${r.status==='inProgress' ? `<button onclick="updateRequestStatus('${r.id}','completed')" class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full btn-press-sm border border-emerald-200 touch-manipulation">完了</button>` : ''}
+                                ${r.status==='pending' ? `<button onclick="updateRequestStatus('${r.id}','approved')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full btn-press-sm border border-indigo-200 touch-manipulation">対応中</button>` : ''}
+                                ${r.status==='approved' ? `<button onclick="updateRequestStatus('${r.id}','done')" class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full btn-press-sm border border-emerald-200 touch-manipulation">完了</button>` : ''}
                             </div>
                         </div>
                     </div>`;
@@ -1471,26 +1599,40 @@
         }
     }
 
-    function chooseShelter(id) {
+    async function chooseShelter(id) {
         state.selectedShelter = shelters.find(s => s.id === id);
         state.currentCategory = 'food';
         state.expandedItem = null;
+
         if (state.currentRole === 'user') {
             const groups = shelterGroups[id] || [];
             const savedGroupId = localStorage.getItem('evac_myGroupId_' + id);
             currentUserGroup = groups.find(g => g.id === savedGroupId) || null;
-            
+
             if (!currentUserGroup) {
                 currentUserGroup = { id: uid(), members: [], registeredAt: null };
             }
-            
+
             navigateTo(currentUserGroup.registeredAt ? 'userMain' : 'groupRegister');
+
         } else if (state.currentRole === 'viewer') {
             currentUserGroup = { id: 'viewer', members: [], registeredAt: new Date() };
             navigateTo('userMain');
+
         } else if (state.currentRole === 'admin') {
-            const pwd = localStorage.getItem('admin_pwd_' + id);
-            if (!pwd) {
+            const { data, error } = await db
+                .from("shelter_admins")
+                .select("password_hash")
+                .eq("shelter_id", id)
+                .maybeSingle();
+
+            if (error) {
+                console.error("管理者パスワード確認エラー:", error);
+                showToast('❌', '管理者情報の確認に失敗しました', 'bg-red-500');
+                return;
+            }
+
+            if (!data) {
                 navigateTo('adminAuthSetPIN');
             } else {
                 navigateTo('adminAuthPIN');
@@ -1610,28 +1752,121 @@
         }
     }
 
-    function registerGroup() {
-        if (!currentUserGroup || !state.selectedShelter || currentUserGroup.members.length === 0) return;
-        const sid = state.selectedShelter.id;
-        currentUserGroup.registeredAt = new Date().toISOString();
-        if (!shelterGroups[sid]) shelterGroups[sid] = [];
-        const existing = shelterGroups[sid].findIndex(g => g.id === currentUserGroup.id);
-        if (existing >= 0) shelterGroups[sid][existing] = currentUserGroup;
-        else shelterGroups[sid].push(currentUserGroup);
-        localStorage.setItem('evac_myGroupId_' + sid, currentUserGroup.id);
-        saveData();
-        showToast('✅', '入所登録が完了しました', 'bg-emerald-600');
-        navigateTo('userMain');
+    async function registerGroup() {
+    if (!currentUserGroup || !state.selectedShelter || currentUserGroup.members.length === 0) return;
+
+    const sid = state.selectedShelter.id;
+
+    const { data: groupData, error: groupError } = await db
+        .from("evac_groups")
+        .insert({
+            shelter_id: sid
+        })
+        .select()
+        .single();
+
+    if (groupError) {
+        console.error("グループ登録エラー:", groupError);
+        showToast('❌', 'グループ登録に失敗しました', 'bg-red-500');
+        return;
     }
 
-    function saveGroupEdits() {
+    const groupId = groupData.id;
+
+    const memberRows = currentUserGroup.members.map(m => ({
+        group_id: groupId,
+        name: m.name,
+        type: m.type,
+        special_notes: m.specialNotes || null,
+        disabled: !!m.disabled
+    }));
+
+    const { error: membersError } = await db
+        .from("members")
+        .insert(memberRows);
+
+    if (membersError) {
+        console.error("メンバー登録エラー:", membersError);
+        showToast('❌', 'メンバー登録に失敗しました', 'bg-red-500');
+        return;
+    }
+
+    currentUserGroup.id = groupId;
+    currentUserGroup.registeredAt = new Date().toISOString();
+
+    if (!shelterGroups[sid]) shelterGroups[sid] = [];
+    shelterGroups[sid].push(currentUserGroup);
+
+    localStorage.setItem('evac_myGroupId_' + sid, groupId);
+
+    showToast('✅', '入所登録が完了しました', 'bg-emerald-600');
+    navigateTo('userMain');
+}
+    async function saveGroupEdits() {
         if (!currentUserGroup || !state.selectedShelter) return;
+
         const sid = state.selectedShelter.id;
+
+        // UUIDかどうか判定する関数
+        function isUuid(value) {
+            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+        }
+
+        for (const m of currentUserGroup.members) {
+            // 既にSupabaseにあるメンバーなら update
+            if (isUuid(m.id)) {
+                const { error } = await db
+                    .from("members")
+                    .update({
+                        name: m.name,
+                        type: m.type,
+                        special_notes: m.specialNotes || null,
+                        disabled: !!m.disabled
+                    })
+                    .eq("id", m.id);
+
+                if (error) {
+                    console.error("メンバー更新エラー:", error);
+                    showToast('❌', 'メンバー情報の更新に失敗しました', 'bg-red-500');
+                    return;
+                }
+
+            // 追加したばかりのメンバーなら insert
+            } else {
+                const { data, error } = await db
+                    .from("members")
+                    .insert({
+                        group_id: currentUserGroup.id,
+                        name: m.name,
+                        type: m.type,
+                        special_notes: m.specialNotes || null,
+                        disabled: !!m.disabled
+                    })
+                    .select()
+                    .single();
+
+                if (error) {
+                    console.error("メンバー追加エラー:", error);
+                    showToast('❌', '新しいメンバーの保存に失敗しました', 'bg-red-500');
+                    return;
+                }
+
+                // Supabaseで作られたUUIDに差し替える
+                m.id = data.id;
+            }
+        }
+
         if (!shelterGroups[sid]) shelterGroups[sid] = [];
         const existing = shelterGroups[sid].findIndex(g => g.id === currentUserGroup.id);
-        if (existing >= 0) shelterGroups[sid][existing] = currentUserGroup;
-        else shelterGroups[sid].push(currentUserGroup);
+
+        if (existing >= 0) {
+            shelterGroups[sid][existing] = currentUserGroup;
+        } else {
+            shelterGroups[sid].push(currentUserGroup);
+        }
+
         saveData();
+
         showToast('✅', 'メンバー情報を保存しました', 'bg-emerald-600');
     }
 
@@ -1676,32 +1911,73 @@
         reader.readAsDataURL(file);
     }
 
-    function submitAddLot() {
-        const sid = state.selectedShelter.id;
-        const d = state.modalData;
-        const servings = parseInt(document.getElementById('lot-servings').value) || 1;
-        const quantity = parseInt(document.getElementById('lot-quantity').value) || 1;
-        const expiry = document.getElementById('lot-expiry').value || null;
-        const img = d.image || null;
+    async function submitAddLot() {
+    const sid = state.selectedShelter.id;
+    const d = state.modalData;
 
-        if (!supplyLots[sid]) supplyLots[sid] = {};
-        if (!supplyLots[sid][d.itemId]) supplyLots[sid][d.itemId] = [];
-        supplyLots[sid][d.itemId].push({
-            id: uid(), servingsPerUnit: servings, quantity: quantity,
-            expirationDate: expiry, image: img, addedAt: new Date().toISOString()
-        });
-        saveData();
-        closeModal();
-        showToast('📦', `${d.itemName}を追加しました`, 'bg-indigo-600');
+    const servings = parseInt(document.getElementById('lot-servings').value) || 1;
+    const quantity = parseInt(document.getElementById('lot-quantity').value) || 1;
+    const expiry = document.getElementById('lot-expiry').value || null;
+    const img = d.image || null;
+
+    const { data, error } = await db
+        .from("supply_lots")
+        .insert({
+            shelter_id: sid,
+            item_id: d.itemId,
+            item_name: d.itemName,
+            quantity: quantity,
+            servings_per_unit: servings,
+            expiration_date: expiry,
+            image_url: img
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error("在庫追加エラー:", error);
+        showToast('❌', '在庫の追加に失敗しました', 'bg-red-500');
+        return;
     }
 
-    function deleteLot(itemId, lotId) {
+    if (!supplyLots[sid]) supplyLots[sid] = {};
+    if (!supplyLots[sid][d.itemId]) supplyLots[sid][d.itemId] = [];
+
+    supplyLots[sid][d.itemId].push({
+        id: data.id,
+        servingsPerUnit: data.servings_per_unit,
+        quantity: data.quantity,
+        expirationDate: data.expiration_date,
+        image: data.image_url,
+        addedAt: data.created_at
+    });
+
+    closeModal();
+    showToast('📦', `${d.itemName}を追加しました`, 'bg-indigo-600');
+    }
+
+   async function deleteLot(itemId, lotId) {
         const sid = state.selectedShelter.id;
+
+        console.log("削除対象:", itemId, lotId);
+
+        const { error } = await db
+            .from("supply_lots")
+            .delete()
+            .eq("id", lotId);
+
+        if (error) {
+            console.error("ロット削除エラー:", error);
+            showToast('❌', 'ロット削除に失敗しました', 'bg-red-500');
+            return;
+        }
+
         if (supplyLots[sid] && supplyLots[sid][itemId]) {
             supplyLots[sid][itemId] = supplyLots[sid][itemId].filter(l => l.id !== lotId);
-            saveData();
-            showToast('🗑️', 'ロットを削除しました', 'bg-gray-700');
         }
+
+        showToast('🗑️', 'ロットを削除しました', 'bg-gray-700');
+        render();
     }
 
     function submitNewItem() {
@@ -1728,70 +2004,150 @@
         showToast('🆕', `「${name}」を作成しました`, 'bg-indigo-600');
     }
 
-    function submitRequest() {
-        const d = state.modalData;
-        
-        let itemName = d.itemName;
-        if (d.itemId === 'custom') {
-            const el = document.getElementById('req-custom-name');
-            if (el) itemName = el.value.trim();
-            if (!itemName) { alert('物資名を入力してください'); return; }
+    async function submitRequest() {
+    const d = state.modalData;
+
+    let itemName = d.itemName;
+    if (d.itemId === 'custom') {
+        const el = document.getElementById('req-custom-name');
+        if (el) itemName = el.value.trim();
+        if (!itemName) {
+            alert('物資名を入力してください');
+            return;
         }
-        
-        const quantity = parseInt(document.getElementById('req-quantity').value) || 1;
-        
-        const deadlineDays = parseInt(document.getElementById('req-deadline').value) || 7;
-        const createdDate = new Date();
-        const targetDate = new Date(createdDate.getTime());
-        targetDate.setDate(targetDate.getDate() + deadlineDays);
-        const deadlineDateStr = targetDate.toISOString().split('T')[0];
-
-        const reqNote = document.getElementById('req-note') ? document.getElementById('req-note').value.trim() : '';
-
-        const cbs = Array.from(document.querySelectorAll('.req-member-cb'));
-        const checkedCbs = cbs.filter(cb => cb.checked);
-        const forMemberIds = checkedCbs.map(cb => cb.value);
-        let forMemberName = null;
-        
-        if (currentUserGroup && forMemberIds.length > 0) {
-            if (forMemberIds.length === currentUserGroup.members.length) {
-                // If all members are checked, consider it "entire group" to simplify UI
-                forMemberName = null;
-            } else {
-                const names = forMemberIds.map(id => {
-                    const m = currentUserGroup.members.find(x => x.id === id);
-                    return m ? m.name : '';
-                }).filter(n => n);
-                forMemberName = names.join(', ');
-            }
-        }
-
-        const reqId = uid();
-        requests.push({
-            id: reqId, shelterId: state.selectedShelter.id, itemId: d.itemId, itemName: itemName,
-            quantity, deadlineDays, deadlineDate: deadlineDateStr, status: 'pending', createdAt: createdDate.toISOString(),
-            groupId: currentUserGroup ? currentUserGroup.id : null,
-            forMemberId: forMemberIds.length > 0 ? forMemberIds[0] : null,
-            forMemberIds: forMemberIds,
-            forMemberName: forMemberName,
-            note: reqNote
-        });
-
-        if (forMemberIds && forMemberIds.length > 0 && d.sourceNeedId && currentUserGroup) {
-            forMemberIds.forEach(id => {
-                const m = currentUserGroup.members.find(x => x.id === id);
-                if (m) m.requestItems[d.sourceNeedId] = reqId;
-            });
-        }
-
-        saveData();
-        closeModal();
-        showToast('📩', 'リクエストを送信しました', 'bg-orange-500');
     }
 
-    function updateRequestStatus(reqId, newStatus) {
+    const quantity = parseInt(document.getElementById('req-quantity').value) || 1;
+    const deadlineDays = parseInt(document.getElementById('req-deadline').value) || 7;
+
+    const createdDate = new Date();
+    const targetDate = new Date(createdDate.getTime());
+    targetDate.setDate(targetDate.getDate() + deadlineDays);
+    const deadlineDateStr = targetDate.toISOString().split('T')[0];
+
+    const reqNote = document.getElementById('req-note')
+        ? document.getElementById('req-note').value.trim()
+        : '';
+
+    const cbs = Array.from(document.querySelectorAll('.req-member-cb'));
+const checkedCbs = cbs.filter(cb => cb.checked);
+const forMemberIds = checkedCbs.map(cb => cb.value);
+
+
+let forMemberName = null;
+
+    if (currentUserGroup && forMemberIds.length > 0) {
+        if (forMemberIds.length === currentUserGroup.members.length) {
+            forMemberName = null;
+        } else {
+            const names = forMemberIds.map(id => {
+                const m = currentUserGroup.members.find(x => x.id === id);
+                return m ? m.name : '';
+            }).filter(n => n);
+            forMemberName = names.join(', ');
+        }
+    }
+
+    const fullNote = [
+        reqNote,
+        forMemberName ? `対象者: ${forMemberName}` : '',
+    ].filter(Boolean).join('\n');
+
+    const { data, error } = await db
+        .from("supply_requests")
+        .insert({
+            shelter_id: state.selectedShelter.id,
+            group_id: currentUserGroup ? currentUserGroup.id : null,
+            item_id: d.itemId === 'custom' ? null : d.itemId,
+            item_name: itemName,
+            quantity: quantity,
+            deadline_days: deadlineDays,
+            deadline_date: deadlineDateStr,
+            note: fullNote || null,
+            status: 'pending'
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error("リクエスト送信エラー:", error);
+        showToast('❌', 'リクエスト送信に失敗しました', 'bg-red-500');
+        return;
+    }
+
+    const reqId = data.id;
+    function isUuid(value) {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    }
+
+    const validMemberIds = forMemberIds.filter(id => isUuid(id));
+
+    if (validMemberIds.length > 0) {
+        const requestMemberRows = validMemberIds.map(memberId => ({
+            request_id: reqId,
+            member_id: memberId
+        }));
+
+        const { error: requestMembersError } = await db
+            .from("request_members")
+            .insert(requestMemberRows);
+
+        if (requestMembersError) {
+            console.error("リクエスト対象者保存エラー:", requestMembersError);
+            showToast('❌', 'リクエスト対象者の保存に失敗しました', 'bg-red-500');
+            return;
+        }
+    }
+
+    requests.push({
+        id: reqId,
+        shelterId: data.shelter_id,
+        itemId: data.item_id || d.itemId,
+        itemName: data.item_name,
+        quantity: data.quantity,
+        deadlineDays: data.deadline_days,
+        deadlineDate: data.deadline_date,
+        status: data.status,
+        createdAt: data.created_at,
+        groupId: data.group_id,
+        forMemberId: forMemberIds.length > 0 ? forMemberIds[0] : null,
+        forMemberIds: forMemberIds,
+        forMemberName: forMemberName,
+        note: reqNote
+    });
+
+    if (forMemberIds && forMemberIds.length > 0 && d.sourceNeedId && currentUserGroup) {
+        forMemberIds.forEach(id => {
+            const m = currentUserGroup.members.find(x => x.id === id);
+            if (m) m.requestItems[d.sourceNeedId] = reqId;
+        });
+    }
+
+    closeModal();
+    showToast('📩', 'リクエストを送信しました', 'bg-orange-500');
+    }
+
+    async function updateRequestStatus(reqId, newStatus) {
+        const { error } = await db
+            .from("supply_requests")
+            .update({
+                status: newStatus
+        })
+        .eq("id", reqId);
+
+        if (error) {
+            console.error("ステータス更新エラー:", error);
+            showToast('❌', 'ステータス更新に失敗しました', 'bg-red-500');
+            return;
+        }
+
         const req = requests.find(r => r.id === reqId);
-        if (req) { req.status = newStatus; saveData(); render(); }
+        if (req) {
+            req.status = newStatus;
+        }
+
+        render();
+        showToast('✅', 'ステータスを更新しました', 'bg-emerald-600');
     }
 
     function changeCalendarMonth(diff) {
@@ -1934,8 +2290,169 @@
         `;
     }
 
+    async function loadSupplyLotsFromSupabase() {
+    const { data, error } = await db
+        .from("supply_lots")
+        .select("*");
+
+    if (error) {
+        console.error("在庫読み込みエラー:", error);
+        return;
+    }
+
+    supplyLots = {};
+
+    data.forEach(lot => {
+        const sid = lot.shelter_id;
+        const itemId = lot.item_id;
+
+        if (!supplyLots[sid]) supplyLots[sid] = {};
+        if (!supplyLots[sid][itemId]) supplyLots[sid][itemId] = [];
+
+        supplyLots[sid][itemId].push({
+            id: lot.id,
+            servingsPerUnit: lot.servings_per_unit,
+            quantity: lot.quantity,
+            expirationDate: lot.expiration_date,
+            image: lot.image_url,
+            addedAt: lot.created_at
+        });
+    });
+}
+
+   async function loadRequestsFromSupabase() {
+    const { data: reqData, error } = await db
+        .from("supply_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+    if (error) {
+        console.error("リクエスト読み込みエラー:", error);
+        return;
+    }
+
+    const reqIds = reqData.map(r => r.id);
+
+    let requestMemberRows = [];
+
+    if (reqIds.length > 0) {
+        const { data: rmData, error: rmError } = await db
+            .from("request_members")
+            .select("*")
+            .in("request_id", reqIds);
+
+        if (rmError) {
+            console.error("リクエスト対象者読み込みエラー:", rmError);
+            return;
+        }
+
+        requestMemberRows = rmData || [];
+    }
+
+    function findMemberById(memberId) {
+        for (const sid of Object.keys(shelterGroups)) {
+            for (const group of shelterGroups[sid]) {
+                const member = group.members.find(m => m.id === memberId);
+                if (member) return member;
+            }
+        }
+        return null;
+    }
+
+    requests = reqData.map(r => {
+        const targetRows = requestMemberRows.filter(row => row.request_id === r.id);
+        const forMemberIds = targetRows.map(row => row.member_id);
+
+        const names = forMemberIds
+            .map(id => {
+                const m = findMemberById(id);
+                return m ? m.name : "";
+            })
+            .filter(name => name);
+
+        return {
+            id: r.id,
+            shelterId: r.shelter_id,
+            groupId: r.group_id,
+            itemId: r.item_id,
+            itemName: r.item_name,
+            quantity: r.quantity,
+            deadlineDays: r.deadline_days,
+            deadlineDate: r.deadline_date,
+            note: r.note,
+            status: r.status,
+            createdAt: r.created_at,
+            forMemberIds: forMemberIds,
+            forMemberId: forMemberIds.length > 0 ? forMemberIds[0] : null,
+            forMemberName: names.length > 0 ? names.join(", ") : null
+        };
+    });
+}
+
+    async function loadGroupsFromSupabase() {
+        const { data: groups, error: groupError } = await db
+            .from("evac_groups")
+            .select("*")
+            .order("registered_at", { ascending: true });
+
+        if (groupError) {
+            console.error("避難者グループ読み込みエラー:", groupError);
+            return;
+        }
+
+        const { data: members, error: membersError } = await db
+            .from("members")
+            .select("*")
+            .order("created_at", { ascending: true });
+
+        if (membersError) {
+            console.error("メンバー読み込みエラー:", membersError);
+            return;
+        }
+
+        shelterGroups = {};
+        const groupMap = {};
+
+        groups.forEach(g => {
+            const groupObj = {
+                id: g.id,
+                registeredAt: g.registered_at,
+                members: []
+            };
+
+            if (!shelterGroups[g.shelter_id]) {
+                shelterGroups[g.shelter_id] = [];
+            }
+
+            shelterGroups[g.shelter_id].push(groupObj);
+            groupMap[g.id] = groupObj;
+        });
+
+        members.forEach(m => {
+            const group = groupMap[m.group_id];
+            if (!group) return;
+
+            group.members.push({
+                id: m.id,
+                type: m.type,
+                name: m.name,
+                needs: {},
+                requestItems: {},
+                specialNotes: m.special_notes || '',
+                disabled: !!m.disabled
+            });
+        });
+    }
+
+    async function initApp() {
     loadData();
+    await loadGroupsFromSupabase();
+    await loadSupplyLotsFromSupabase();
+    await loadRequestsFromSupabase();
     render();
-    </script>
+    }
+
+    initApp();
+</script>
 </body>
 </html>
