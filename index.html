@@ -30,10 +30,20 @@
         ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 4px; }
         * { -webkit-overflow-scrolling: touch; }
         html, body { height: 100vh; height: 100dvh; width: 100vw; width: 100dvw; }
+        .mobile-scroll {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            min-height: 0;
+        }
+
+        .safe-bottom {
+            padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+        }
     </style>
 </head>
-<body class="h-screen w-screen overflow-hidden text-gray-800">
-    <div id="app" class="relative mx-auto flex h-full w-full max-w-md flex-col bg-gray-50 shadow-2xl overflow-hidden">
+<body class="h-[100dvh] w-screen overflow-hidden text-gray-800">
+    <div id="app" class="relative mx-auto flex h-[100dvh] w-full max-w-md flex-col bg-gray-50 shadow-2xl overflow-hidden"> 
         <!-- 画面がここに描画されます -->
     </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -223,7 +233,6 @@ const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.c
         let res = { total: 0, infants: 0, children: 0, adults: 0, elderly: 0, groupCount: groups.length };
         groups.forEach(g => {
             (g.members || []).forEach(m => {
-                if (m.disabled) return;
                 res.total++;
                 if (m.type === 'infant') res.infants++;
                 else if (m.type === 'child') res.children++;
@@ -252,12 +261,12 @@ const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.c
 
     function calcGroupCalories(group) {
         if (!group || !group.members) return 0;
-        return group.members.filter(m=>!m.disabled).reduce((sum, m) => sum + (calorieTable[m.type] || 0), 0);
+        return group.members.reduce((sum, m) => sum + (calorieTable[m.type] || 0), 0);
     }
 
     function calcGroupWater(group) {
         if (!group || !group.members) return 0;
-        return group.members.filter(m=>!m.disabled).reduce((sum, m) => sum + (waterTable[m.type] || 0), 0);
+        return group.members.reduce((sum, m) => sum + (waterTable[m.type] || 0), 0);
     }
 
     function getTotalServings(shelterId, itemId) {
@@ -656,20 +665,11 @@ const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.c
 
         return members.map((m, index) => {
             const tInfo = memberTypes.find(t => t.id === m.type);
-            if (m.disabled) {
-                return `
-                <div class="rounded-2xl border border-gray-200 bg-gray-100 overflow-hidden mb-3 opacity-60">
-                    <div class="flex items-center justify-between p-3">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xl grayscale">${tInfo.emoji}</div>
-                            <div class="text-left line-through text-gray-500">
-                                <p class="font-bold text-sm">${m.name}</p>
-                            </div>
-                        </div>
-                        <button onclick="toggleDisableMember('${m.id}')" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">有効化</button>
-                    </div>
-                </div>`;
-            }
+            
+            
+                    
+                
+            
 
             const nList = needsByType[m.type] || [];
             const isExpanded = state.expandedMember === m.id;
@@ -730,7 +730,7 @@ const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.c
                         <textarea onchange="updateMemberNotes('${m.id}', this.value)" placeholder="例: 小麦アレルギー、車椅子利用など" class="w-full text-xs text-gray-800 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 h-16 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-300">${m.specialNotes||''}</textarea>
                     </div>
                     <div class="pt-2 text-right">
-                        <button onclick="toggleDisableMember('${m.id}')" class="text-xs font-bold text-gray-500 btn-press-sm px-3 py-1 bg-gray-100 rounded-lg">このメンバーを無効化</button>
+                        <button onclick="removeMember('${m.id}')" class="text-xs font-bold text-red-600 btn-press-sm px-3 py-1.5 bg-red-50 border border-red-100 rounded-lg">🗑 このメンバーを削除</button>
                     </div>
                 </div>`;
             }
@@ -767,8 +767,8 @@ const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.c
             </div>
             <p class="mt-2 text-xs opacity-90">あなたを含めた避難グループのメンバーを追加してください。一人ひとりのニーズを細かく設定できます。</p>
         </div>
-        <div class="flex-1 flex flex-col overflow-hidden relative">
-            <div class="flex-1 overflow-y-auto p-4 pb-[50vh] space-y-2 slide-in-right bg-gray-50">
+        <div class="min-h-0 flex-1 flex flex-col overflow-hidden relative">
+            <div class="mobile-scroll flex-1 p-4 pb-36 space-y-2 slide-in-right bg-gray-50">
                 ${renderMemberCards(currentUserGroup ? currentUserGroup.members : [])}
                 
                 <div class="mt-4 p-4 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/30">
@@ -783,7 +783,7 @@ const db = window.supabase.createClient("https://dirfupchgwvywvftaizk.supabase.c
                     </div>
                 </div>
             </div>
-            <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md p-4 pb-6 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] z-50">
+            <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md p-4 safe-bottom shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] z-50">
                 <button onclick="registerGroup()" class="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 py-4 text-center font-bold text-white shadow-lg btn-press disabled:opacity-50 touch-manipulation" ${(currentUserGroup && currentUserGroup.members.length > 0) ? '' : 'disabled'}>
                     この内容で登録・入所する
                 </button>
@@ -928,7 +928,7 @@ const statusColor = statusColorMap[r.status] || 'text-gray-500 bg-gray-100 borde
             const mWat = calcGroupWater(currentUserGroup);
 
             contentHtml = `
-            <div class="flex-1 overflow-y-auto p-4 pb-20 space-y-4 fade-in bg-gray-50">
+            <div class="mobile-scroll flex-1 p-4 pb-36 space-y-4 fade-in bg-gray-50">
                 ${mTotal > 0 ? `
                 <div class="rounded-2xl bg-white border border-gray-200 p-4 shadow-sm">
                     <h3 class="text-[10px] font-bold text-gray-500 mb-3 uppercase tracking-wider">📊 1日あたりの必要量</h3>
@@ -956,7 +956,7 @@ const statusColor = statusColorMap[r.status] || 'text-gray-500 bg-gray-100 borde
                     </div>
                 </div>
             </div>
-            <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md p-4 pb-6 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] z-50">
+            <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md p-4 safe-bottom shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] z-50">
                 <button onclick="saveGroupEdits()" class="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3.5 text-center font-bold text-white shadow-lg btn-press touch-manipulation">
                     💾 変更を保存
                 </button>
@@ -979,7 +979,7 @@ const statusColor = statusColorMap[r.status] || 'text-gray-500 bg-gray-100 borde
             </div>` : ''}
         </div>
         ${tabHtml}
-        <div class="flex-1 flex flex-col overflow-hidden relative">${contentHtml}</div>`;
+        <div class="min-h-0 flex-1 flex flex-col overflow-hidden relative">${contentHtml}</div>`;
     }
 
     function screenAdminDashboard() {
@@ -1674,21 +1674,68 @@ const statusColor = {
         render();
     }
 
-    function removeMember(memberId) {
-        if (!confirm('このメンバーを削除してよろしいですか？')) return;
-        currentUserGroup.members = currentUserGroup.members.filter(m => m.id !== memberId);
-        if (state.expandedMember === memberId) state.expandedMember = null;
-        render();
-    }
+    function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 
-    function toggleDisableMember(memberId) {
-        const m = currentUserGroup.members.find(x => x.id === memberId);
-        if (m) {
-            m.disabled = !m.disabled;
-            if (state.expandedMember === memberId) state.expandedMember = null;
-            render();
+async function removeMember(memberId) {
+    if (!currentUserGroup || !currentUserGroup.members) return;
+
+    const target = currentUserGroup.members.find(m => m.id === memberId);
+    if (!target) return;
+
+    if (!confirm(`「${target.name}」を削除します。元に戻せません。よろしいですか？`)) return;
+
+    // Supabaseに保存済みのメンバーならDBからも削除
+    if (isUuid(memberId)) {
+        const { error: memberError } = await db
+            .from("members")
+            .delete()
+            .eq("id", memberId);
+
+        if (memberError) {
+            console.error("メンバー削除エラー:", memberError);
+            showToast('❌', 'メンバー削除に失敗しました', 'bg-red-500');
+            return;
         }
     }
+
+    // 画面上のデータから削除
+    currentUserGroup.members = currentUserGroup.members.filter(m => m.id !== memberId);
+
+    // ローカルのリクエスト表示からも対象者情報を整理
+    requests = requests.map(r => {
+        const hasMemberIds = Array.isArray(r.forMemberIds);
+        const isRelated =
+            r.forMemberId === memberId ||
+            (hasMemberIds && r.forMemberIds.includes(memberId));
+
+        if (!isRelated) return r;
+
+        const ids = hasMemberIds
+            ? r.forMemberIds.filter(id => id !== memberId)
+            : [];
+
+        const names = ids
+            .map(id => currentUserGroup.members.find(m => m.id === id)?.name)
+            .filter(Boolean);
+
+        return {
+            ...r,
+            forMemberIds: ids,
+            forMemberId: ids.length > 0 ? ids[0] : null,
+            forMemberName: names.length > 0 ? names.join(', ') : null
+        };
+    });
+
+    if (state.expandedMember === memberId) {
+        state.expandedMember = null;
+    }
+
+    saveData();
+    showToast('🗑', 'メンバーを削除しました', 'bg-red-500');
+    render();
+}
 
     function updateMemberName(memberId, name) {
         const m = currentUserGroup.members.find(x => x.id === memberId);
@@ -1778,7 +1825,7 @@ const statusColor = {
         name: m.name,
         type: m.type,
         special_notes: m.specialNotes || null,
-        disabled: !!m.disabled
+        disabled: false
     }));
 
     const { error: membersError } = await db
@@ -1821,7 +1868,7 @@ const statusColor = {
                         name: m.name,
                         type: m.type,
                         special_notes: m.specialNotes || null,
-                        disabled: !!m.disabled
+                        disabled: false
                     })
                     .eq("id", m.id);
 
@@ -1840,7 +1887,7 @@ const statusColor = {
                         name: m.name,
                         type: m.type,
                         special_notes: m.specialNotes || null,
-                        disabled: !!m.disabled
+                        disabled: false
                     })
                     .select()
                     .single();
@@ -2439,7 +2486,7 @@ let forMemberName = null;
                 needs: {},
                 requestItems: {},
                 specialNotes: m.special_notes || '',
-                disabled: !!m.disabled
+                disabled: false
             });
         });
     }
